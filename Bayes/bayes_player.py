@@ -4,6 +4,7 @@ from dataset_collector import *
 import numpy as np
 import random
 import pickle
+import sys
 
 def weighted_random(values, weights):
 	r = random.random()
@@ -14,6 +15,19 @@ def weighted_random(values, weights):
 		r -= weights[i]
 
 	return values[i]
+
+def set_controller_state(controller, cs):
+	controller.tilt_analog(melee.enums.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
+	controller.tilt_analog(melee.enums.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
+	for b in cs.button:
+		if (b != melee.enums.Button.BUTTON_START):
+			if cs.button[b]:
+				controller.press_button(b)
+			else:
+				controller.release_button(b)
+
+	controller.press_shoulder(melee.enums.Button.BUTTON_L, cs.l_shoulder)
+	controller.press_shoulder(melee.enums.Button.BUTTON_R, cs.r_shoulder)
 
 console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
 
@@ -50,19 +64,20 @@ while True:
 	if gamestate.menu_state in [melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH]:
 		ps = gamestate.players[myPort]
 		key = stringEnumerate(keyInfo(gamestate, myPort, opPort))
-		vDict = np.array(valueFn(gamestate, myPort, opPort))
+		vDict = valueFn(gamestate, myPort, opPort)
+		vDict["value"] = np.array(vDict["value"])
 
 		if (key in data["data"]):
 			total = 0
 			weights = []
 			for value in data["data"][key]:
-				w = np.linalg.norm(vDict["value"]- np.array(value["value"]))
+				w = np.linalg.norm(vDict["value"] - np.array(value["value"]))
 				weights.append(w)
 				total += w
 
 			probabilities = np.array(weights) / total
 			choice = weighted_random(data["data"][key], probabilities.tolist())
-			choice["input"]
+			set_controller_state(controller, choice["input"])
 
 
 	else:
