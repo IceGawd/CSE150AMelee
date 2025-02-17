@@ -154,7 +154,12 @@ if __name__ == "__main__":
 			console = melee.Console(system="file", path=slp_file)
 			console.connect()
 
-			gamestate = console.step()
+			try:
+				gamestate = console.step()
+			except:
+				print(slp_file + " (Weird???)")
+				continue
+
 			port = fn(gamestate)
 			if (port != -1):
 				port2 = otherPort(gamestate, port)
