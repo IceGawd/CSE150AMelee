@@ -25,6 +25,10 @@ The performance measure of the Bayesian agent is how accurately does the agent p
 
 This agent is right now just Table Driven. It has a simple lookup table of all inputs and what situation they were done in. This is simply what has to be done for a Bayesian network; they are often just LUTs of CPTs.
 
+**Describe how your agent is set up and where it fits in probabilistic modeling**
+
+It is a Bayesian network as I described earlier. The probability function is simply a weighted distance function between the the states and then it will use probability to determine what is the most likely input for the player it is training on.
+
 **What is the conclusion of your 1st model? What can be done to possibly improve it?**
 
-This was definetly one of the most simple ways to make an AI and it honestly kind of works which is impressive. It is, however, far from being good. The AI takes a long time to do large lookups, something that could be optimized but is mostly futile. It also is mostly incapable of tech skill, because that requires knowledge of past and future inputs (something that I think will most likely be solved in the HMM section).
+This was definetly one of the most simple ways to make an AI and it honestly kind of works which is impressive. It is, however, far from being good. The AI takes a long time to do large lookups, something that could be optimized but is mostly futile. It also is mostly incapable of tech skill, because that requires knowledge of past and future inputs (something that I think will most likely be solved in the HMM section). It also has no sense for learning or gameplan; each input is independent from the last.
