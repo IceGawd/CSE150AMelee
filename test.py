@@ -158,8 +158,8 @@ while True:
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,
 											controller,
-											melee.Character.FOX,
-											melee.Stage.YOSHIS_STORY,
+											melee.Character.SAMUS,
+											melee.Stage.POKEMON_STADIUM,
 											args.connect_code,
 											costume=costume,
 											autostart=True,
