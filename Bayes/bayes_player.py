@@ -6,8 +6,46 @@ import random
 import pickle
 import sys
 import time
+import math
+from sklearn.cluster import MiniBatchKMeans
 
-savefile = "ice_god_fox.pkl"
+maxVal = None
+minVal = None
+
+def data_normalization(data):
+	global maxVal, minVal
+
+	print("Data Normalization!")
+
+	p = 0
+	keys = data["data"].keys()
+	for i, key in enumerate(keys):
+		while (50 * i > p * len(keys)):
+			print(str(p) + "%")
+			p += 1
+
+		lists = [d["value"] for d in data["data"][key]]
+
+		if (maxVal == None):
+			maxVal = list(map(max, zip(*lists)))
+			minVal = list(map(min, zip(*lists)))
+		else:
+			maxVal = list(map(max, zip(maxVal, *lists)))
+			minVal = list(map(min, zip(minVal, *lists)))
+
+	maxVal = np.array(maxVal)
+	minVal = np.array(minVal)
+
+	for i, key in enumerate(keys):
+		while (50 * i > (p - 50) * len(keys)):
+			print(str(p) + "%")
+			p += 1
+
+		# print(key)
+		for d in data["data"][key]:
+			d["value"] = (np.array(d["value"]) - minVal) / (maxVal - minVal)
+
+savefile = "ice_god_fox"
 # connect_code = "CELL#835"
 connect_code = ""
 
@@ -18,10 +56,12 @@ character_stage = {
 	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE]
 }
 
-character, stage = character_stage[savefile.split('.')[0]]
+character, stage = character_stage[savefile]
 costume = random.randint(0, 4)
 
-data = loadData("./" + savefile)
+data = loadData(savefile)
+data_normalization(data)
+data_compression(data, keys=data["data"].keys(), percent=True)
 
 def weighted_random(values, weights):
 	r = random.random()
@@ -90,21 +130,23 @@ while True:
 				myPort = discovered_port
 
 		key = stringEnumerate(keyInfo(gamestate, myPort, opPort))
-		vDict = valueFn(gamestate, myPort, opPort)
-		vDict["value"] = np.array(vDict["value"])
 
 		if (key in data["data"]):
-			print(len(data["data"][key]))
+			ddk = data["data"][key]
+			# print(len(ddk))
+
+			vDict = valueFn(gamestate, myPort, opPort)
+			vDict["value"] = (np.array(vDict["value"]) - minVal) / (maxVal - minVal)
 
 			total = 0
 			weights = []
-			for value in data["data"][key]:
-				w = np.linalg.norm(vDict["value"] - np.array(value["value"]))
+			for value in ddk:
+				w = np.linalg.norm(vDict["value"] - value["value"])
 				weights.append(w)
 				total += w
 
 			probabilities = np.array(weights) / total
-			choice = weighted_random(data["data"][key], probabilities.tolist())
+			choice = weighted_random(ddk, probabilities.tolist())
 			set_controller_state(controller, choice["input"])
 
 
