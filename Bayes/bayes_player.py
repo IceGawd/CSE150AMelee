@@ -45,23 +45,73 @@ def data_normalization(data):
 		for d in data["data"][key]:
 			d["value"] = (np.array(d["value"]) - minVal) / (maxVal - minVal)
 
-savefile = "ice_god_fox"
+def bad_compression(data):
+	for key in data["data"].keys():
+		data["data"][key] = data["data"][key][-1000:]
+
+	return data
+
+
+def fast_compression(data):
+	p = 0
+	keys = data["data"].keys()
+	for i, key in enumerate(keys):
+		while (100 * i > p * len(keys)):
+			print(str(p) + "%")
+			p += 1
+
+		while len(data["data"][key]) > 2000:
+			ddk = data["data"][key]
+			differences = []
+
+			for index in range(0, len(ddk) - 1):
+				differences.append(np.linalg.norm(getArray(ddk[index + 1]) - getArray(ddk[index])))
+
+			threshold = np.mean(differences)
+
+			newPoints = []
+			start = 0
+			for index in range(0, len(ddk) - 1):
+				if threshold < differences[index]:
+					newPoints.append(pointAverager(ddk[start:index + 1]))
+					start = index + 1
+
+			newPoints.append(pointAverager(ddk[start:len(ddk)]))
+
+		# print("Compression Rate: " + str(len(newPoints) / len(ddk)))
+		data["data"][key] = newPoints
+
+	return data
+
+
+savefile = "fox_falco"
+filename = "./pickles/compressed_" + savefile + ".pkl"
 # connect_code = "CELL#835"
 connect_code = ""
 
 character_stage = {
 	"samus_marth": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
-	"fox_fox": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
+	"fox_fox_FD": [melee.Character.FOX, melee.Stage.FINAL_DESTINATION], 
 	"ice_god_fox": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
-	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE]
+	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
+	"falco_marth": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
+	"fox_falco": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
 }
 
 character, stage = character_stage[savefile]
 costume = random.randint(0, 4)
 
-data = loadData(savefile)
-data_normalization(data)
-data_compression(data, keys=data["data"].keys(), percent=True)
+if os.path.exists(filename):
+	with open(filename, 'rb') as f:
+		data = pickle.load(f)
+else:
+	data = loadData(savefile)
+	data_normalization(data)
+	fast_compression(data)
+
+	with open(filename, 'wb') as f:
+		pickle.dump(data, f)
+
 
 def weighted_random(values, weights):
 	r = random.random()
@@ -141,7 +191,7 @@ while True:
 			total = 0
 			weights = []
 			for value in ddk:
-				w = np.linalg.norm(vDict["value"] - value["value"])
+				w = 1 / np.linalg.norm((vDict["value"] - value["value"]) * valueWeighting) 
 				weights.append(w)
 				total += w
 
@@ -149,6 +199,11 @@ while True:
 			choice = weighted_random(ddk, probabilities.tolist())
 			set_controller_state(controller, choice["input"])
 
+		"""
+		if gamestate.players[myPort].off_stage:
+			controller.tilt_analog(melee.Button.BUTTON_MAIN, 0.5, 1)
+			controller.press_button(melee.Button.BUTTON_B)
+		"""
 
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,

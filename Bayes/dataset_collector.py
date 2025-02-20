@@ -3,6 +3,8 @@ import melee
 import pickle
 import time
 import numpy as np
+import math
+from sklearn.cluster import MiniBatchKMeans
 
 saveKeys = []
 
@@ -123,11 +125,17 @@ def ice_god_samus(gamestate):
 def samus_marth(gamestate):
 	return me_you(gamestate, melee.Character.SAMUS, melee.Character.MARTH)
 
+def falco_marth(gamestate):
+	return me_you(gamestate, melee.Character.FALCO, melee.Character.MARTH)
+
 def falco_falcon(gamestate):
 	return me_you(gamestate, melee.Character.FALCO, melee.Character.CPTFALCON)
 
 def fox_fox(gamestate):
 	return me_you(gamestate, melee.Character.FOX, melee.Character.FOX)
+
+def fox_falco(gamestate):
+	return me_you(gamestate, melee.Character.FOX, melee.Character.FALCO)
 
 def fox_fox_FD(gamestate):
 	if len(gamestate.players.keys()) != 2:
@@ -137,10 +145,19 @@ def fox_fox_FD(gamestate):
 		return -1
 
 	for port in gamestate.players.keys():
-		if (gamestate.players[port].character != melee.Character.FOX):
+		if (gamestate.players[port].character != melee.Character.FOX) or gamestate.players[port].cpu_level != 0:
 			return -1
 
 	return port
+
+def getArray(point):
+	return np.concatenate([point["value"].flatten(), point["input"].to_numpy().flatten()])
+
+def pointAverager(points):
+	avg_value = np.mean([p["value"] for p in points], axis=0)
+	avg_input = np.mean([p["input"].to_numpy() for p in points], axis=0)
+	return {"value": avg_value, "input": PickleableControllerState(np_array=avg_input)}
+
 
 def data_compression(data, keys, threshold=2000, percent=False):
 	print("Data Compression!")
@@ -163,7 +180,7 @@ def data_compression(data, keys, threshold=2000, percent=False):
 		# print(n)
 
 		feature_matrix = np.array([
-			np.concatenate([point["value"].flatten(), point["input"].to_numpy().flatten()])
+			getArray(point)
 			for point in points
 		])
 
@@ -175,9 +192,7 @@ def data_compression(data, keys, threshold=2000, percent=False):
 			cluster_points = [points[j] for j in range(n) if labels[j] == i]
 
 			if (len(cluster_points) > 0):
-				avg_value = np.mean([p["value"] for p in cluster_points], axis=0)
-				avg_input = np.mean([p["input"].to_numpy() for p in cluster_points], axis=0)
-				clustered_data.append({"value": avg_value, "input": PickleableControllerState(np_array=avg_input)})
+				clustered_data.append(pointAverager(cluster_points))
 
 		data["data"][key] = clustered_data
 
@@ -218,12 +233,16 @@ def keyInfo(gamestate, myPort, opPort):
 	info.append(gamestate.stage)
 	return info
 
+valueWeighting = np.array([20, 4, 20, 10, 1, 10, 2, 3, 3, 3, 3, 3, 1, 1, 1, 1])
+valueWeighting = np.concatenate([valueWeighting, valueWeighting])
+
 def valueFn(gamestate, myPort, opPort):
 	value = []
 	for port in [myPort, opPort]:
 		playerstate = gamestate.players[port]
 		value.append(float(playerstate.off_stage))
 		value.append(float(playerstate.facing))
+		value.append(float(playerstate.on_ground))
 		value.append(float(playerstate.jumps_left))
 		value.append(float(playerstate.stock))
 		value.append(float(playerstate.position.x))
@@ -301,10 +320,12 @@ if __name__ == "__main__":
 		"fox_fox_FD": [fox_fox_FD, False], 
 		"samus_marth": [samus_marth, False], 
 		"falco_falcon": [falco_falcon, False], 
+		"falco_marth": [falco_marth, False], 
+		"fox_falco": [fox_falco, False], 
 		"fox_fox": [fox_fox, True],
 	}
 
-	savefile = "falco_falcon"
+	savefile = "fox_falco"
 	fn = filefunctions[savefile][0]
 
 	data = {
@@ -327,6 +348,9 @@ if __name__ == "__main__":
 
 	for slp_file in slippi_files:
 		if reading:
+			if "2024" not in slp_file: # and "2023" not in slp_file
+				continue
+
 			console = melee.Console(system="file", path=slp_file)
 			console.connect()
 
@@ -346,6 +370,10 @@ if __name__ == "__main__":
 				print(slp_file + " (Valid)")
 				while gamestate != None:
 					addData(data, gamestate, port, port2)
+
+					if filefunctions[savefile][1]:
+						addData(data, gamestate, port2, port)
+
 					gamestate = console.step()
 			else:
 				print(slp_file + " (Invalid)")
