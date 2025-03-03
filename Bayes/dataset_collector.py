@@ -119,6 +119,9 @@ def ice_god_fox(gamestate):
 	# print(colorCharacter(gamestate, melee.Character.FOX, 2))
 	return max(playerCharacter(gamestate, melee.Character.FOX, "ice"), colorCharacter(gamestate, melee.Character.FOX, 2))
 
+def ice_god_falco(gamestate):
+	return max(playerCharacter(gamestate, melee.Character.FALCO, "ice"), colorCharacter(gamestate, melee.Character.FALCO, 2))
+
 def ice_god_samus(gamestate):
 	return playerCharacter(gamestate, melee.Character.SAMUS, "ice")
 
@@ -127,6 +130,9 @@ def samus_marth(gamestate):
 
 def falco_marth(gamestate):
 	return me_you(gamestate, melee.Character.FALCO, melee.Character.MARTH)
+
+def marth_fox(gamestate):
+	return me_you(gamestate, melee.Character.MARTH, melee.Character.FOX)
 
 def falco_falcon(gamestate):
 	return me_you(gamestate, melee.Character.FALCO, melee.Character.CPTFALCON)
@@ -233,8 +239,8 @@ def keyInfo(gamestate, myPort, opPort):
 	info.append(gamestate.stage)
 	return info
 
-valueWeighting = np.array([20, 4, 20, 10, 1, 10, 2, 3, 3, 3, 3, 3, 1, 1, 1, 1])
-valueWeighting = np.concatenate([valueWeighting, valueWeighting])
+valueWeighting = np.array([7, 3, 7, 5, 1, 5, 5, 3, 3, 3, 3, 3, 1, 1, 1, 1])
+valueWeighting = np.concatenate([3 * valueWeighting, valueWeighting])
 
 def valueFn(gamestate, myPort, opPort):
 	value = []
@@ -311,10 +317,11 @@ def loadData(file):
 	return data
 
 if __name__ == "__main__":
-	slippi_root = "/home/avighna/Slippi"
-
+	# slippi_root = "/home/avighna/Slippi"
+	slippi_root = "/home/avighna/Documents/python/CSE150AMelee/Bayes"
 	filefunctions = {
 		"ice_god_samus": [ice_god_samus, False], 
+		"ice_god_falco": [ice_god_falco, False], 
 		"ice_god_fox": [ice_god_fox, False], 
 		"shunnash_fox": [shunnash_fox, False], 
 		"fox_fox_FD": [fox_fox_FD, False], 
@@ -323,9 +330,10 @@ if __name__ == "__main__":
 		"falco_marth": [falco_marth, False], 
 		"fox_falco": [fox_falco, False], 
 		"fox_fox": [fox_fox, True],
+		"testing": [marth_fox, False],
 	}
 
-	savefile = "fox_falco"
+	savefile = "testing"
 	fn = filefunctions[savefile][0]
 
 	data = {
@@ -339,7 +347,8 @@ if __name__ == "__main__":
 	slippi_files = []
 	for root, _, files in os.walk(slippi_root):
 		for file in files:
-			slippi_files.append(os.path.join(root, file))
+			if (file[-4:] == ".slp"):
+				slippi_files.append(os.path.join(root, file))
 
 	slippi_files.sort(key = lambda x: x.split('/')[-1])
 
@@ -348,8 +357,8 @@ if __name__ == "__main__":
 
 	for slp_file in slippi_files:
 		if reading:
-			if "2024" not in slp_file: # and "2023" not in slp_file
-				continue
+			# if "2024" not in slp_file: # and "2023" not in slp_file
+			# 	continue
 
 			console = melee.Console(system="file", path=slp_file)
 			console.connect()

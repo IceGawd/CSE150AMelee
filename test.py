@@ -20,10 +20,10 @@ def check_port(value):
 parser = argparse.ArgumentParser(description='Example of libmelee in action')
 parser.add_argument('--port', '-p', type=check_port,
 					help='The controller port (1-4) your AI will play on',
-					default=2)
+					default=1)
 parser.add_argument('--opponent', '-o', type=check_port,
 					help='The controller port (1-4) the opponent will play on',
-					default=1)
+					default=2)
 parser.add_argument('--debug', '-d', action='store_true',
 					help='Debug mode. Creates a CSV of all game states')
 parser.add_argument('--address', '-a', default="127.0.0.1",
@@ -122,13 +122,14 @@ while True:
 		#   port we actually are.
 		discovered_port = args.port
 		if args.connect_code != "":
-			discovered_port = melee.gamestate.port_detector(gamestate, melee.Character.FOX, costume)
+			discovered_port = melee.gamestate.port_detector(gamestate, melee.Character.MARTH, costume)
 		if discovered_port > 0:
 			# NOTE: This is where your AI does all of its stuff!
 			# This line will get hit once per frame, so here is where you read
 			#   in the gamestate and decide what buttons to push on the controller
 			ps = gamestate.players[discovered_port]
 			controller.release_all()
+			"""
 			if (ps.on_ground):
 				if (shining):
 					shineCount += 1
@@ -145,6 +146,15 @@ while True:
 				controller.press_button(melee.enums.Button.BUTTON_B)
 				shining = True
 
+			# """
+			if (ps.on_ground):
+				print("grnd")
+				if (random.random() > 0.5):
+					controller.press_button(melee.enums.Button.BUTTON_X)
+			else:
+				print("dash")
+				controller.tilt_analog(melee.enums.Button.BUTTON_MAIN, 0.25, 0.25)
+				controller.press_button(melee.enums.Button.BUTTON_R)
 
 			# melee.techskill.multishine(ai_state=gamestate.players[discovered_port], controller=controller)
 		else:
@@ -158,8 +168,8 @@ while True:
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,
 											controller,
-											melee.Character.SAMUS,
-											melee.Stage.POKEMON_STADIUM,
+											melee.Character.MARTH,
+											melee.Stage.FINAL_DESTINATION,
 											args.connect_code,
 											costume=costume,
 											autostart=True,

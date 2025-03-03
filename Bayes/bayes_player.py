@@ -12,6 +12,11 @@ from sklearn.cluster import MiniBatchKMeans
 maxVal = None
 minVal = None
 
+def normalize(point):
+	global minVal, maxVal
+	point = (np.array(point) - minVal) / (maxVal - minVal)
+	return np.nan_to_num(point, nan=0.5, posinf=1, neginf=0)
+
 def data_normalization(data):
 	global maxVal, minVal
 
@@ -43,7 +48,7 @@ def data_normalization(data):
 
 		# print(key)
 		for d in data["data"][key]:
-			d["value"] = (np.array(d["value"]) - minVal) / (maxVal - minVal)
+			d["value"] = normalize(d["value"])
 
 def bad_compression(data):
 	for key in data["data"].keys():
@@ -60,23 +65,22 @@ def fast_compression(data):
 			print(str(p) + "%")
 			p += 1
 
-		while len(data["data"][key]) > 2000:
-			ddk = data["data"][key]
-			differences = []
+		ddk = data["data"][key]
+		differences = []
 
-			for index in range(0, len(ddk) - 1):
-				differences.append(np.linalg.norm(getArray(ddk[index + 1]) - getArray(ddk[index])))
+		for index in range(0, len(ddk) - 1):
+			differences.append(np.linalg.norm(getArray(ddk[index + 1]) - getArray(ddk[index])))
 
-			threshold = np.mean(differences)
+		threshold = np.mean(differences)
 
-			newPoints = []
-			start = 0
-			for index in range(0, len(ddk) - 1):
-				if threshold < differences[index]:
-					newPoints.append(pointAverager(ddk[start:index + 1]))
-					start = index + 1
+		newPoints = []
+		start = 0
+		for index in range(0, len(ddk) - 1):
+			if threshold < differences[index]:
+				newPoints.append(pointAverager(ddk[start:index + 1]))
+				start = index + 1
 
-			newPoints.append(pointAverager(ddk[start:len(ddk)]))
+		newPoints.append(pointAverager(ddk[start:len(ddk)]))
 
 		# print("Compression Rate: " + str(len(newPoints) / len(ddk)))
 		data["data"][key] = newPoints
@@ -84,30 +88,39 @@ def fast_compression(data):
 	return data
 
 
-savefile = "fox_falco"
+savefile = "ice_god_falco"
 filename = "./pickles/compressed_" + savefile + ".pkl"
-# connect_code = "CELL#835"
-connect_code = ""
+connect_code = "QHAS#352"
+# connect_code = ""
 
 character_stage = {
+	"ice_god_samus": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
 	"samus_marth": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
 	"fox_fox_FD": [melee.Character.FOX, melee.Stage.FINAL_DESTINATION], 
 	"ice_god_fox": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
+	"ice_god_falco": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
 	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
 	"falco_marth": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
 	"fox_falco": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
+	"testing": [melee.Character.MARTH, melee.Stage.FINAL_DESTINATION], 
 }
 
 character, stage = character_stage[savefile]
-costume = random.randint(0, 4)
+# costume = random.randint(0, 4)
+costume = 1
 
 if os.path.exists(filename):
 	with open(filename, 'rb') as f:
 		data = pickle.load(f)
+		maxVal = data["maxVal"]
+		minVal = data["minVal"]
 else:
 	data = loadData(savefile)
 	data_normalization(data)
 	fast_compression(data)
+
+	data["minVal"] = minVal
+	data["maxVal"] = maxVal
 
 	with open(filename, 'wb') as f:
 		pickle.dump(data, f)
@@ -129,14 +142,14 @@ def set_controller_state(controller, cs):
 	controller.tilt_analog(melee.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
 	controller.tilt_analog(melee.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
 	for b in cs.button:
-		if (b != melee.Button.BUTTON_START):
+		if (b != melee.Button.BUTTON_START and b != melee.Button.BUTTON_L) and b != melee.Button.BUTTON_R:
 			if cs.button[b]:
 				controller.press_button(b)
 			else:
 				controller.release_button(b)
 
-	controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
-	controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
+	# controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
+	# controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
 
 	controller.flush()
 
@@ -163,7 +176,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 while True:
-	start = time.time()
+	# start = time.time()
 
 	gamestate = console.step()
 	if gamestate is None:
@@ -181,21 +194,37 @@ while True:
 
 		key = stringEnumerate(keyInfo(gamestate, myPort, opPort))
 
+		print(key)
+
 		if (key in data["data"]):
 			ddk = data["data"][key]
 			# print(len(ddk))
 
 			vDict = valueFn(gamestate, myPort, opPort)
-			vDict["value"] = (np.array(vDict["value"]) - minVal) / (maxVal - minVal)
+			# print("preval: " + str(vDict["value"]))
+			vDict["value"] = normalize(vDict["value"])
+			# print("postval: " + str(vDict["value"]))
 
 			total = 0
 			weights = []
-			for value in ddk:
+			seenIndicies = []
+			for i, value in enumerate(ddk):
 				w = 1 / np.linalg.norm((vDict["value"] - value["value"]) * valueWeighting) 
+
+				# if (gamestate.players[myPort].on_ground and value["input"].button[melee.Button.BUTTON_R]) or (gamestate.players[myPort].on_ground and value["input"].button[melee.Button.BUTTON_X]):
+				# 	seenIndicies.append(i)
+					# print("value: " + str(value["value"]))
+					# print("valueWeighting: " + str(valueWeighting))
+					# print("norm: " + str(np.linalg.norm((vDict["value"] - value["value"]) * valueWeighting)))
+					# print("Weight: " + str(w))
+
 				weights.append(w)
 				total += w
 
 			probabilities = np.array(weights) / total
+			# if (len(seenIndicies) > 0):
+			# 	print("Probability: " + str(probabilities[seenIndicies[0]]))
+
 			choice = weighted_random(ddk, probabilities.tolist())
 			set_controller_state(controller, choice["input"])
 
