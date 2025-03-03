@@ -16,6 +16,8 @@ We will be considering the inputs as a whole to be one node. This is because som
 
 This means that the Bayesian probability we want to solve for is $P(input | E_1, E_2, ..., E_n)$ where $E_1, E_2, ..., E_n$ are the individual and independent environment variables. This is a CPT that we need to calculate for each input possibility and then do the actual input on the frame. The naive way of finding this probability is to simply do $P(input | E_1, E_2, ..., E_n) = \frac{P(input,E_1, E_2, ..., E_n)}{P(E_1, E_2, ..., E_n)}=\frac{P(input,E_1, E_2, ..., E_n)}{\prod_{i=1}^{n}P(E_i)}$ which is equivalent to the number of times we see an input and environment combination each time we are in that environment. However, we cannot do this because the number of times where $E_1, E_2, ..., E_n$ will be $0$ a significant number of times. This is not an issue of lack of data, however. It has been said that after 10-15 moves in chess, a new board state is reached that has never before been seen. If a simpler game like chess can reach complex states, you can imagine the wide variety in a game like melee. Thus, we do two different things to solve this issue.
 
+![Alt text](bayesian_network.png)
+
 ## Treat Floats Differently
 
 A lot of the way that we treat Bayesian probability with data is 0 or 1; either this data point exists or it does not. If we make the dependency in the joint probability be variable depending on how close integer and float values in the data are to the real scenario and weight probabilities that way, then we can solve this always 0 issue.
