@@ -1,29 +1,44 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import melee
-import signal
-from dataset_collector import *
-import numpy as np
-import random
+import os
 import pickle
-import sys
-import time
-import math
-from sklearn.cluster import MiniBatchKMeans
+import numpy as np
+import signal
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from database import *
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../Bayes")))
+from dataset_collector import *
+
+class SimpleModel(nn.Module):
+	def __init__(self, input_size, output_size):
+		super(SimpleModel, self).__init__()
+		self.fc = nn.Sequential(
+			nn.Linear(input_size, 64),
+			nn.ReLU(),
+			nn.Linear(64, 64),
+			nn.ReLU(),
+			nn.Linear(64, output_size),
+			nn.Sigmoid()  # Ensures outputs are between 0 and 1
+		)
+
+	def forward(self, x):
+		return self.fc(x)
 
 savefile = "ice_god_falco"
 filename = "./pickles/compressed_" + savefile + ".pkl"
-connect_code = "QHAS#352"
-# connect_code = ""
+# connect_code = "QHAS#352"
+connect_code = ""
 
 character, stage = character_stage[savefile]
 # costume = random.randint(0, 4)
 costume = 1
 
-maxVal = None
 minVal = None
+maxVal = None
 
 if os.path.exists(filename):
 	with open(filename, 'rb') as f:
@@ -41,15 +56,53 @@ else:
 	with open(filename, 'wb') as f:
 		pickle.dump(data, f)
 
-def weighted_random(values, weights):
-	r = random.random()
+N = 32
+M = 18
+model_path = "./models/" + savefile
 
-	i = -1
-	while r > 0:
-		i += 1
-		r -= weights[i]
+print("No model found. Training a new one...")
 
-	return values[i]
+models = {}
+
+p = 0
+keys = data["data"].keys()
+for i, key in enumerate(keys):
+	print(str(p) + "%")
+
+	while (100 * i > p * len(keys)):
+		p += 1
+
+	path = model_path + "_" + key + ".pt"
+
+	if os.path.exists(path):
+		print("Loading existing model...")
+		model = SimpleModel(N, M)
+		model.load_state_dict(torch.load(path))
+	else:
+		model = SimpleModel(N, M)
+		criterion = nn.MSELoss()  # Example loss function (modify as needed)
+		optimizer = optim.Adam(model.parameters(), lr=0.01)
+
+		X_train = torch.tensor([d["value"].flatten().tolist() for d in data["data"][key]], dtype=torch.float)
+		Y_train = torch.tensor([d["input"].to_numpy().flatten().tolist() for d in data["data"][key]], dtype=torch.float)
+
+		epochs = 500
+		for epoch in range(epochs):
+			optimizer.zero_grad()
+			outputs = model(X_train)
+			loss = criterion(outputs, Y_train)
+			loss.backward()
+			optimizer.step()
+
+			if epoch % 50 == 0:
+				print(f"Epoch [{epoch}/{epochs}], Loss: {loss.item():.4f}")
+
+		torch.save(model.state_dict(), path)
+		print("Model saved.")
+
+	model.eval()
+
+	models[key] = model
 
 console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
 
@@ -94,43 +147,14 @@ while True:
 
 		print(key)
 
-		if (key in data["data"]):
-			ddk = data["data"][key]
-			# print(len(ddk))
-
+		if (key in models):
+			model = models[key]
 			vDict = valueFn(gamestate, myPort, opPort)
-			# print("preval: " + str(vDict["value"]))
 			vDict["value"] = normalize(vDict["value"], minVal, maxVal)
-			# print("postval: " + str(vDict["value"]))
 
-			total = 0
-			weights = []
-			seenIndicies = []
-			for i, value in enumerate(ddk):
-				w = 1 / np.linalg.norm((vDict["value"] - value["value"]) * valueWeighting) 
+			vDict["input"] = model(torch.from_numpy(vDict["value"]).to(torch.float))
 
-				# if (gamestate.players[myPort].on_ground and value["input"].button[melee.Button.BUTTON_R]) or (gamestate.players[myPort].on_ground and value["input"].button[melee.Button.BUTTON_X]):
-					# seenIndicies.append(i)
-					# print("value: " + str(value["value"]))
-					# print("valueWeighting: " + str(valueWeighting))
-					# print("norm: " + str(np.linalg.norm((vDict["value"] - value["value"]) * valueWeighting)))
-					# print("Weight: " + str(w))
-
-				weights.append(w)
-				total += w
-
-			probabilities = np.array(weights) / total
-			# if (len(seenIndicies) > 0):
-			# 	print("Probability: " + str(probabilities[seenIndicies[0]]))
-
-			choice = weighted_random(ddk, probabilities.tolist())
-			set_controller_state(controller, choice["input"])
-
-		"""
-		if gamestate.players[myPort].off_stage:
-			controller.tilt_analog(melee.Button.BUTTON_MAIN, 0.5, 1)
-			controller.press_button(melee.Button.BUTTON_B)
-		"""
+			set_controller_state(controller, PickleableControllerState(np_array=vDict["input"].detach().numpy()))
 
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,

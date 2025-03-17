@@ -14,9 +14,7 @@ from sklearn.cluster import MiniBatchKMeans
 saveKeys = []
 
 csButtonKeys = None
-
-def getArray(point):
-	return np.concatenate([point["value"].flatten(), point["input"].to_numpy().flatten()])
+pickles_dir = "./pickles/"
 
 def pointAverager(points):
 	avg_value = np.mean([p["value"] for p in points], axis=0)
@@ -65,6 +63,7 @@ def data_compression(data, keys, threshold=2000, percent=False):
 
 def saveData(file, data):
 	global saveKeys
+	global pickles_dir
 
 	# print(data)
 	print("DON'T QUIT Saving...")
@@ -72,12 +71,12 @@ def saveData(file, data):
 	# data_compression(data, saveKeys, threshold=4000)
 
 	for key in saveKeys:
-		with open("./pickles/" + file + "_" + key + ".pkl", 'wb') as f:
+		with open(pickles_dir + file + "_" + key + ".pkl", 'wb') as f:
 			pickle.dump(data["data"][key], f)
 
 	saveKeys = []
 
-	with open("./pickles/" + file + ".pkl", 'wb') as f:
+	with open(pickles_dir + file + ".pkl", 'wb') as f:
 		pickle.dump(data["last_file"], f)
 	print("Saved!")
 
@@ -96,6 +95,8 @@ def addData(data, gamestate, myPort, opPort):
 		saveKeys.append(key)
 
 def loadData(file):
+	global pickles_dir
+
 	print("Loading data...")
 
 	data = {"data": {}, "last_file": None}
@@ -105,7 +106,6 @@ def loadData(file):
 		with open(last_file_path, 'rb') as f:
 			data["last_file"] = pickle.load(f)
 	
-	pickles_dir = "./pickles/"
 	files = os.listdir(pickles_dir)
 
 	p = 0
@@ -123,4 +123,4 @@ def loadData(file):
 	return data
 
 if __name__ == "__main__":
-	loopThrough(addData, saveData, loadData)
+	loopThrough(addData, saveData, loadData, savefile="shunnash_fox")
