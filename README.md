@@ -1,8 +1,3 @@
-# The Agent's Goal
-I am designing an agent for Super Smash Brothers Melee that tries to replicate the playstyles of the player data it is given. This means that it should display the way that the player combos and plays neutral, along with its technical skill.
-
-There are a few ways of measuring this both quantitatively and qualitatively. Quantitatively, we can see how many times certain actions were performed in a match and see if that matches up with the average time the player does that action, such as dashdances, wavedashes, etc. Qualitatively, we can see the technical skill and choices the player makes. For example, whenever I play Fox McCloud, I go for a lot more technical and flashy moves for style and because I like pressing buttons. However, whenever my sister plays Fox McCloud, she plays him more methodically going for more raw punishes and shine spikes with less technical skill.
-
 # Design Philophy
 To create a melee agent that plays like a player, we should only be giving the agent information that only a human would have. That means that reading from the opponent's inputs directly would not be allowed. I will also be referring to the agent's output as "inputs" because those are the inputs into the controller and the agent is mimicking player inputs. Another thing we have to address is floating point values. A lot of values in melee such as speed, position, etc. are floating point which poses a very large problem for some networks. To mitigate this, I will be doing either one of two things. I will either make very large groups so that floating point values fit into ranges (ie. grouping by 0-10, 10-20, etc.) or I will not include floating point values in the networks but instead have them be a part of the probability function.
 
@@ -27,10 +22,6 @@ A lot of the way that we treat Bayesian probability with data is 0 or 1; either 
 If we hit a spot where we have never seen before, it is a safe bet to just do nothing. Most of the time players aren't making radical motion switches every frame, they simply make minor adjustments frame by frame anyways.
 
 # Milestone 2 Questions
-**Explain what your AI agent does in terms of PEAS. What is the "world" like?**
-
-The performance measure of the Bayesian agent is how accurately does the agent portray the training data in terms of style of play (such as which options does it select, how it combos, moves, plays neutral, etc.). The environment is simply the Super Smash Bros. Melee gameplay with Slippi data. The actuators are the controller inputs that it is outputting each game frame. Its sensors are the information it gets about itself, the opponent and the stage. The world to this agent is just the vector I gave it that has a lot of information such as stock count, percent, jumps left, etc.
-
 **What kind of agent is it? Goal based? Utility based? etc.**
 
 This agent is right now just Table Driven. It has a simple lookup table of all inputs and what situation they were done in. This is simply what has to be done for a Bayesian network; they are often just LUTs of CPTs.
@@ -42,3 +33,89 @@ It is a Bayesian network as I described earlier. The probability function is sim
 **What is the conclusion of your 1st model? What can be done to possibly improve it?**
 
 This was definetly one of the most simple ways to make an AI and it honestly kind of works which is impressive. You can see that when trained on technical gameplay, it attempts to do those technical abilities but it fails due to it having no understanding of past and future. For example, a common tech I do is called a shield drop, where I move the stick forward, hold a trigger, then move the stick down a notch. The issue with this in the Bayesian network is that all it sees is that the gamestate is shielding on a platform, so it tries to hold forward and down and just ends up doing a different action (like rolling or spotdodging), which in turn makes the future gamestates not about shielding and instead about rolling or spotdodging. It does sometimes manage to do technical things and for simpler techniques (like fastfalling where you simply press down after the peak of your jump). It correctly does it multiple times if the player it is replicating does it often (like me) and it doesnt do it if the replicated player doesn't do it often (like my sister). It is, however, far from being good. Without knowing the past states, it doesn't have any semblance of plan so each decision is made independent of the previous one. Take, for example, Fox dashing away from Marth. That could mean that Fox was either dash dancing, whiff punishing, pivoting, or actually running away. The Bayesian Network has no idea which option it is without knowing previous states. However, Hidden Markov Models, which are conditioned on previous states, would most likely be able to differentiate between these options and then do a more accurate input accordingly. The current Bayesian Network will just pick by the probability of the gameplan rather than the gameplan itself. Going back to that Fox Marth example, if the Fox was pivoting but the data says that this player pivots only 10% of the time, then each frame it will only choose to continue doing the pivot 10% of the time, which quickly degrades into it rapidly switching gameplans. Overall, it is still better than random inputs and when my friends played against the bot, they could tell that it was trained off of me (and even joked whenever it made a mistake that that is a mistake I would do).
+
+
+# Milestone 3
+## PEAS/Agent Analysis
+**Describe your agent in terms of PEAS and give a background of your task at hand.**
+I am designing an agent for Super Smash Brothers Melee that tries to replicate the playstyles of the player data it is given. This means that it should display the way that the player combos and plays neutral, along with its technical skill.
+
+There are a few ways of measuring this both quantitatively and qualitatively. Quantitatively, we can see how many times certain actions were performed in a match and see if that matches up with the average time the player does that action, such as dashdances, wavedashes, etc. Qualitatively, we can see the technical skill and choices the player makes. For example, whenever I play Fox McCloud, I go for a lot more technical and flashy moves for style and because I like pressing buttons. However, whenever my sister plays Fox McCloud, she plays him more methodically going for more raw punishes and shine spikes with less technical skill.
+
+The performance measure of the Bayesian agent is how accurately does the agent portray the training data in terms of style of play (such as which options does it select, how it combos, moves, plays neutral, etc.). The environment is simply the Super Smash Bros. Melee gameplay with Slippi data. The actuators are the controller inputs that it is outputting each game frame. Its sensors are the information it gets about itself, the opponent and the stage. The world to this agent is just the vector I gave it that has a lot of information such as stock count, percent, jumps left, etc.
+
+## Agent Setup, Data Preprocessing, Training setup
+**Give an exploration of your dataset, and highlight which variables are important. Give a brief overview of each variable and its role in your agent/model**
+The dataset are a collection of Slippi files. Whenever a game of melee is played on the Slippi client it saves a replay of the game by saving every input from every player on every frame. When reading the file, it will then replay the game by doing the same inputs at the same times to give you the gamestate at each frame. There are a lot of variables at play, here are the ones that I used. These variables are gotten for each frame of the gameplay
+
+- *playerstate.off_stage*
+This is a helper variable that tells whether a character is off stage or not. This is to assist the agent is understanding when to recover, as being off stage is mostly a bad thing and leads to a loss of a life.
+
+- *playerstate.facing*
+This is important for the agent to know as some inputs will do entirely different moves based on where the character is facing (for example, if facing right, doing C-right in the air would do a "forward aerial" but doing C-right facing left would do a "backward aerial")
+
+- *playerstate.on_ground*
+This is also a helper variable that is key as again, some moves can only be done on the ground versus on the air.
+
+- *playerstate.jumps_left*
+This variable indicates how many jumps does the player have, which for most characters is between 0-2.
+
+- *playerstate.stock*
+This variables is how many lives does the player have left in the game.
+
+- *playerstate.position*
+Self explanatory, the (x, y) tuple position relative to the center of the stage.
+
+- *playerstate.speed_air_x_self*
+- *playerstate.speed_ground_x_self*
+- *playerstate.speed_x_attack*
+- *playerstate.speed_y_attack*
+- *playerstate.speed_y_self*
+These five variables represent speed in some way. The way melee's engine works is complicated, so it separates air and ground x velocity but has only one value for y velocity. The attack speed variables are used if an attack will give velocity to the character (like how certain moves move the character upwards a lot)
+
+- *playerstate.percent*
+In platform fighters like melee, instead of health characters have a percentage that indicates how far they get knocked back when they get hit.
+
+- *playerstate.hitstun_frames_left*
+When hit by a move, there is a certain window where a character can not do anything. This is reffered to as "hitstun". This variable is how many frames (or 1/60th seconds) does a character have before they can do actions again. There are some important things a character can do in hitstun, however, so we add this as a variable.
+
+- *playerstate.invulnerability_left*
+In some circumstances, a player can get a small duration of invincibility where they do not take damage or knockback upon being hit.
+
+- *playerstate.shield_strength*
+In melee, your shield has a health from 0 to 60 and this variable stores that.
+
+- *valueWeighting*
+For each of the players, we store all of the playerstate variables into an array that the agent will compare with the gamestate using the euclidian distance weighted by this valueWeighting array. This weighted array is the "observation" in our HMM and valueWeighting ensures that all values get weighted according to how prevalent they are to the hidden state.
+
+- *playerstate.action*
+I am putting the variable separate because this variable is our hidden state in our HMM. This is the presumed action that the player is doing but we cannot determine that during the match so it is hidden. However, we have access to it in playback, so we can use this to train our transition and observation probabilities.
+
+**Describe in detail how your variables interact with each other, and if your model fits a particular structure, explain why you chose that structure to model your agent. If it does not, further elaborate on why you chose that model based on the variables.**
+
+For this milestone I wanted to fix the problems of the last agent, meaning this new agent should
+- have some understanding of past actions and take that into account
+- still have elements of probability and should not be deterministic (as the players they are replicating are nondeterministic as well)
+- be able to do tech skill (aka doing complex step-by-step inputs) if trained on data that does it
+- be able to recover (one of the largest issues in the Bayes example was recovery)
+- understand the similarities between actions
+- should not get stuck in a loop of doing certain actions ad infinitum
+
+At first I worked a lot on a Reinforcement Learning model. However, I found that even in the best scenarios, the number of unique gamestates easily went over 100K and from experience I know that even solving a 1000x1000 matrix takes a few seconds so RL did not seem possible due to the sheer number of states, so instead I went for an HMM solution.
+
+The action is causing all of the other variables; actions cause movement, damage, shielding, etc, which are all the variables shown above. So the action causing this all is our hidden state.
+
+**Describe your process for calculating parameters in your model. That is, if you wish to find the CPTs, provide formulas as to how you computed them. If you used algorithms in class, just mention them.**
+
+For the valueWeighting parameter, me and my friends just against it a few times and got some data with different parameters and chose the ones that best fit our result metrics (see the conclusion for more detail, here are some images)
+# TODO
+
+## Cited Works / Assistance
+- xpilot (he made the current best melee agent and helped me with issues regarding the library)
+- altf4 (creator of the melee library and helped me setup the library)
+- ChatGPT (asked help for seeing if there were better solutions). Prompts:
+	- Explain forward, backward and viterbi's algorithms
+	- How do I transition from a bayes network agent to an HMM agent?
+	- How do I decrease the number of states in an RL network?
+	- How can I cluster data based on similarity?
+- [Libmelee](https://libmelee.readthedocs.io/en/latest/)

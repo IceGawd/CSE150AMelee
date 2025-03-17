@@ -13,10 +13,51 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from database import *
 
+# Constants
+savefile = "ice_god_falco"
+filename = "./pickles/compressed_" + savefile + ".pkl"
+connect_code = "QHAS#352"
+# connect_code = ""
 
+character_stage = {
+	"ice_god_samus": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
+	"samus_marth": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
+	"fox_fox_FD": [melee.Character.FOX, melee.Stage.FINAL_DESTINATION], 
+	"ice_god_fox": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
+	"ice_god_falco": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
+	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
+	"falco_marth": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
+	"fox_falco": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
+	"testing": [melee.Character.MARTH, melee.Stage.FINAL_DESTINATION], 
+}
+
+# Initialize variables
 maxVal = None
 minVal = None
 
+# Choose character and stage
+character, stage = character_stage[savefile]
+# costume = random.randint(0, 4)
+costume = 1
+
+# Load data if exists
+if os.path.exists(filename):
+	with open(filename, 'rb') as f:
+		data = pickle.load(f)
+		maxVal = data["maxVal"]
+		minVal = data["minVal"]
+else:
+	data = loadData(savefile)
+	data_normalization(data)
+	fast_compression(data)
+
+	data["minVal"] = minVal
+	data["maxVal"] = maxVal
+
+	with open(filename, 'wb') as f:
+		pickle.dump(data, f)
+
+# Functions for data normalization and compression
 def normalize(point):
 	global minVal, maxVal
 	point = (np.array(point) - minVal) / (maxVal - minVal)
@@ -61,7 +102,6 @@ def bad_compression(data):
 
 	return data
 
-
 def fast_compression(data):
 	p = 0
 	keys = data["data"].keys()
@@ -92,45 +132,46 @@ def fast_compression(data):
 
 	return data
 
+# HMM related functions
+def forward(obs, A, B, pi):
+	N = len(A)
+	T = len(obs)
 
-savefile = "ice_god_falco"
-filename = "./pickles/compressed_" + savefile + ".pkl"
-connect_code = "QHAS#352"
-# connect_code = ""
+	alpha = np.zeros((T, N))
 
-character_stage = {
-	"ice_god_samus": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
-	"samus_marth": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 
-	"fox_fox_FD": [melee.Character.FOX, melee.Stage.FINAL_DESTINATION], 
-	"ice_god_fox": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
-	"ice_god_falco": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
-	"falco_falcon": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
-	"falco_marth": [melee.Character.FALCO, melee.Stage.RANDOM_STAGE],
-	"fox_falco": [melee.Character.FOX, melee.Stage.RANDOM_STAGE], 
-	"testing": [melee.Character.MARTH, melee.Stage.FINAL_DESTINATION], 
-}
+	for i in range(N):
+		alpha[0, i] = pi[i] * B[i, obs[0]]
 
-character, stage = character_stage[savefile]
-# costume = random.randint(0, 4)
-costume = 1
+	for t in range(1, T):
+		for i in range(N):
+			alpha[t, i] = np.sum(alpha[t-1] * A[:, i]) * B[i, obs[t]]
 
-if os.path.exists(filename):
-	with open(filename, 'rb') as f:
-		data = pickle.load(f)
-		maxVal = data["maxVal"]
-		minVal = data["minVal"]
-else:
-	data = loadData(savefile)
-	data_normalization(data)
-	fast_compression(data)
+	return alpha
 
-	data["minVal"] = minVal
-	data["maxVal"] = maxVal
+def viterbi(obs, A, B, pi):
+	N = len(A)
+	T = len(obs)
 
-	with open(filename, 'wb') as f:
-		pickle.dump(data, f)
+	delta = np.zeros((T, N))
+	psi = np.zeros((T, N), dtype=int)
 
+	for i in range(N):
+		delta[0, i] = pi[i] * B[i, obs[0]]
 
+	for t in range(1, T):
+		for i in range(N):
+			prob = delta[t-1] * A[:, i] * B[i, obs[t]]
+			delta[t, i] = np.max(prob)
+			psi[t, i] = np.argmax(prob)
+
+	best_path = np.zeros(T, dtype=int)
+	best_path[T-1] = np.argmax(delta[T-1])
+	for t in range(T-2, -1, -1):
+		best_path[t] = psi[t+1, best_path[t+1]]
+
+	return best_path
+
+# Random weighted selection
 def weighted_random(values, weights):
 	r = random.random()
 
@@ -141,6 +182,7 @@ def weighted_random(values, weights):
 
 	return values[i]
 
+# Set controller state
 def set_controller_state(controller, cs):
 	controller.release_all()
 
@@ -158,6 +200,7 @@ def set_controller_state(controller, cs):
 
 	controller.flush()
 
+# Initialize console and controllers
 console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
 
 myPort = 1
@@ -174,12 +217,14 @@ console.connect()
 controller.connect()
 controller_human.connect()
 
+# Signal handler
 def signal_handler(sig, frame):
 	console.stop()
 	sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
+# Main loop
 while True:
 	# start = time.time()
 

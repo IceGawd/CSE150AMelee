@@ -50,7 +50,8 @@ if args.debug:
 #       bot can actually "see" what's happening in the game
 console = melee.Console(path=args.dolphin_executable_path,
 						slippi_address=args.address,
-						logger=log)
+						logger=log,
+						blocking_input=True)
 
 # Create our Controller object
 #   The controller is the second primary object your bot will interact with
@@ -122,12 +123,20 @@ while True:
 		#   port we actually are.
 		discovered_port = args.port
 		if args.connect_code != "":
-			discovered_port = melee.gamestate.port_detector(gamestate, melee.Character.MARTH, costume)
+			discovered_port = melee.gamestate.port_detector(gamestate, melee.Character.FOX, costume)
 		if discovered_port > 0:
 			# NOTE: This is where your AI does all of its stuff!
 			# This line will get hit once per frame, so here is where you read
 			#   in the gamestate and decide what buttons to push on the controller
 			ps = gamestate.players[discovered_port]
+
+			# print(gamestate.players[2].position.x)
+			# print(gamestate.players[2].position.y)
+			# print(gamestate.players[2].speed_air_x_self)
+			# print(gamestate.players[2].speed_ground_x_self)
+			# print(gamestate.players[2].speed_x_attack)
+			# print(gamestate.players[2].speed_y_attack)
+			# print(gamestate.players[2].speed_y_self)
 			controller.release_all()
 			"""
 			if (ps.on_ground):
@@ -146,7 +155,6 @@ while True:
 				controller.press_button(melee.enums.Button.BUTTON_B)
 				shining = True
 
-			# """
 			if (ps.on_ground):
 				print("grnd")
 				if (random.random() > 0.5):
@@ -155,8 +163,9 @@ while True:
 				print("dash")
 				controller.tilt_analog(melee.enums.Button.BUTTON_MAIN, 0.25, 0.25)
 				controller.press_button(melee.enums.Button.BUTTON_R)
+			# """
 
-			# melee.techskill.multishine(ai_state=gamestate.players[discovered_port], controller=controller)
+			melee.techskill.multishine(ai_state=gamestate.players[discovered_port], controller=controller)
 		else:
 			# If the discovered port was unsure, reroll our costume for next time
 			costume = random.randint(0, 4)
@@ -168,7 +177,7 @@ while True:
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,
 											controller,
-											melee.Character.MARTH,
+											melee.Character.FOX,
 											melee.Stage.FINAL_DESTINATION,
 											args.connect_code,
 											costume=costume,
