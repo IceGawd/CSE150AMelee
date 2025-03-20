@@ -29,7 +29,6 @@ class SimpleModel(nn.Module):
 		return self.fc(x)
 
 savefile = "ice_god_falco"
-filename = "./pickles/compressed_" + savefile + ".pkl"
 # connect_code = "QHAS#352"
 connect_code = ""
 
@@ -40,6 +39,8 @@ costume = 1
 minVal = None
 maxVal = None
 
+"""
+filename = "./pickles/compressed_" + savefile + ".pkl"
 if os.path.exists(filename):
 	with open(filename, 'rb') as f:
 		data = pickle.load(f)
@@ -55,6 +56,10 @@ else:
 
 	with open(filename, 'wb') as f:
 		pickle.dump(data, f)
+"""
+
+data = loadData(savefile)
+minVal, maxVal = data_normalization(data)
 
 N = 32
 M = 18
@@ -65,7 +70,7 @@ print("No model found. Training a new one...")
 models = {}
 
 p = 0
-keys = data["data"].keys()
+keys = list(data["data"].keys())
 for i, key in enumerate(keys):
 	print(str(p) + "%")
 
@@ -103,6 +108,8 @@ for i, key in enumerate(keys):
 	model.eval()
 
 	models[key] = model
+
+	del data["data"][key]
 
 console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
 
@@ -154,7 +161,13 @@ while True:
 
 			vDict["input"] = model(torch.from_numpy(vDict["value"]).to(torch.float))
 
+			print(vDict["input"])
+
 			set_controller_state(controller, PickleableControllerState(np_array=vDict["input"].detach().numpy()))
+			
+		else:
+			print("Key loss!")
+
 
 	else:
 		melee.MenuHelper.menu_helper_simple(gamestate,

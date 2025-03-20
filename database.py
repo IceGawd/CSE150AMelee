@@ -31,6 +31,9 @@ class PickleableControllerState(melee.controller.ControllerState):
 			self.l_shoulder = controller_state.l_shoulder  # float
 			self.main_stick = controller_state.main_stick  # (x, y)
 			self.r_shoulder = controller_state.r_shoulder  # float
+
+			print(self.l_shoulder)
+			print(self.r_shoulder)
 		else:
 			self.button = {}  # Default empty dictionary
 			self.c_stick = (0.5, 0.5)  # Neutral
@@ -318,6 +321,9 @@ def normalize(point, minVal, maxVal):
 def data_normalization(data):
 	print("Data Normalization!")
 
+	maxVal = None
+	minVal = None
+
 	p = 0
 	keys = data["data"].keys()
 	for i, key in enumerate(keys):
@@ -386,19 +392,21 @@ def fast_compression(data):
 	return data
 
 def set_controller_state(controller, cs):
-	controller.release_all()
+	# controller.release_all()
 
+	"""
 	controller.tilt_analog(melee.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
 	controller.tilt_analog(melee.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
 	for b in cs.button:
-		if (b != melee.Button.BUTTON_START and b != melee.Button.BUTTON_L) and b != melee.Button.BUTTON_R:
+		if (b != melee.Button.BUTTON_START):
 			if cs.button[b]:
 				controller.press_button(b)
 			else:
 				controller.release_button(b)
+	"""
 
-	# controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
-	# controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
+	controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
+	controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
 
 	controller.flush()
 
