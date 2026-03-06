@@ -111,7 +111,7 @@ for i, key in enumerate(keys):
 
 	del data["data"][key]
 
-console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
+console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64_3.5.2.AppImage")
 
 myPort = 1
 opPort = 2
