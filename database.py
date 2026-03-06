@@ -31,9 +31,9 @@ class PickleableControllerState(melee.controller.ControllerState):
 			self.l_shoulder = controller_state.l_shoulder  # float
 			self.main_stick = controller_state.main_stick  # (x, y)
 			self.r_shoulder = controller_state.r_shoulder  # float
-
-			print(self.l_shoulder)
-			print(self.r_shoulder)
+			
+			# print(self.l_shoulder)
+			# print(self.r_shoulder)
 		else:
 			self.button = {}  # Default empty dictionary
 			self.c_stick = (0.5, 0.5)  # Neutral
@@ -248,13 +248,15 @@ def loopThrough(addData, saveData, loadData, filesFrom=["2025"], savefile="ice_g
 
 	fn = filefunctions[savefile][0]
 
-	data = {
-		"last_file": None,
-		"data": {}
-	}
+	# data = {
+	# 	"last_file": None,
+	# 	"data": {}
+	# }
 
-	if os.path.exists("./pickles/" + savefile + ".pkl"):
-		data = loadData(savefile)
+	# if os.path.exists("./pickles/" + savefile + ".pkl"):
+	# 	data = loadData(savefile)
+
+	data = loadData(savefile)
 
 	slippi_files = []
 	for root, _, files in os.walk(slippi_root):

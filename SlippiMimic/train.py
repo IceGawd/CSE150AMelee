@@ -15,10 +15,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 CONFIG = {
 	# data
-	"frame_feature_size": 64,     # processed frame features
-	"action_embed_size": 16,
-	"controller_output_size": 16,
-	"num_action_states": len(melee.enums.Action), 
+	"frame_feature_size": 57,     # processed frame features
+	"action_embed_size": 32,
+	"controller_output_size": 18,
+	"num_action_states": len(melee.enums.Action),  
 
 	# history
 	"history_frames": 10,
@@ -28,10 +28,11 @@ CONFIG = {
 
 	# lstm
 	"lstm_hidden": 128,
-	"lstm_layers": 1,
+	"lstm_layers": 2,
 
 	# training
-	"lr": 1e-3,
+	"lr": 1e-4,
+	"sequence_length": 1000
 }
 
 class ActionEmbedding(nn.Module):
@@ -82,151 +83,290 @@ class FeedForwardNet(nn.Module):
 		super().__init__()
 
 		hidden_layers = math.ceil(math.log2(input_size / output_size))
-		hidden_size = output_size * math.pow(2, hidden_layers)
+		hidden_size = int(output_size * (2 ** hidden_layers))
 
-		self.lstm_beginning = nn.Parameter(torch.tensor(lstm.lstm_hidden, dtype=torch.float32, device=device))
-		self.lstm = MLP_LSTM_Model(
-			input_size,
-			CONFIG["mlp_hidden"],
-			CONFIG["lstm_hidden"],
-			CONFIG["lstm_layers"],
-			CONFIG["controller_output_size"]
-		).to(device)
+		layers = []
 
-		self.action_embedding = action_embedding
-
-		self.intro = nn.Sequential(
+		layers.append(nn.Sequential(
 			nn.Linear(input_size, hidden_size),
-			nn.ReLU(),
-		)
+			nn.ReLU()
+		))
 
-		self.hidden = [nn.Sequential(nn.Linear(hidden_size >> i, hidden >> (i + 1)), nn.ReLU()), for i in range(hidden_layers + 1)]
+		current = hidden_size
+		for i in range(hidden_layers):
+			next_size = max(output_size, current // 2)
+
+			layers.append(nn.Sequential(
+				nn.Linear(current, next_size),
+				nn.ReLU()
+			))
+
+			current = next_size
+
+		layers.append(nn.Linear(current, output_size))
+
+		self.layers = nn.ModuleList(layers)
 
 	def forward(self, x):
-		output = self.net(x)
 
-		for layer in self.hidden:
-			output = layer(output)
+		out = x
 
-		return output
+		for layer in self.layers:
+			out = layer(out)
+
+		return out
 
 def count_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def process_frame(last_frames, last_inputs, current_frame, action_state, action_embedder):
-	# convert lists to tensors
-	frame_tensor = torch.tensor(current_frame, dtype=torch.float32, device=device)
+def processGamestate(gamestate, myPort, opPort):
+	"""
+	Must return
 
-	action_tensor = torch.tensor([action_state], dtype=torch.long, device=device)
+	raw_frame : list[float]
+	action_state : int
+	controller : list[float]
+	"""
 
-	action_embed = action_embedder(action_tensor).squeeze(0)
+	raw_frame = []
+	for port in [myPort, opPort]:
+		playerstate = gamestate.players[port]
+		raw_frame.append(float(playerstate.action_frame))
+		raw_frame.extend(playerstate.ecb_bottom)
+		raw_frame.extend(playerstate.ecb_left)
+		raw_frame.extend(playerstate.ecb_right)
+		raw_frame.extend(playerstate.ecb_top)
+		raw_frame.append(float(playerstate.facing))
+		raw_frame.append(float(playerstate.hitlag_left))
+		raw_frame.append(float(playerstate.hitstun_frames_left))
+		raw_frame.append(float(playerstate.invulnerability_left))
+		raw_frame.append(float(playerstate.invulnerable))
+		raw_frame.append(float(playerstate.jumps_left))
+		raw_frame.append(float(playerstate.moonwalkwarning))
+		raw_frame.append(float(playerstate.off_stage))
+		raw_frame.append(float(playerstate.on_ground))
+		raw_frame.append(float(playerstate.percent))
+		raw_frame.append(float(playerstate.position.x))
+		raw_frame.append(float(playerstate.position.y))
+		raw_frame.append(float(playerstate.shield_strength))
+		raw_frame.append(float(playerstate.speed_air_x_self))
+		raw_frame.append(float(playerstate.speed_ground_x_self))
+		raw_frame.append(float(playerstate.speed_x_attack))
+		raw_frame.append(float(playerstate.speed_y_attack))
+		raw_frame.append(float(playerstate.speed_y_self))
+		raw_frame.append(float(playerstate.stock))
+	raw_frame.append(gamestate.frame)
 
-	# concatenate frame + action embedding
-	nn_input = torch.cat([
-		frame_tensor,
-		action_embed
-	])
+	action_state = gamestate.players[myPort].action.value
 
-	# placeholder target
-	# replace with your actual controller data
-	target_output = torch.zeros(CONFIG["controller_output_size"], device=device)
+	controller = PickleableControllerState(gamestate.players[myPort].controller_state).to_numpy()
 
-	return nn_input, target_output
+	return raw_frame, action_state, controller
 
-def getFrameAndActionState():
-	frame = [random.random() for _ in range(CONFIG["frame_feature_size"])]
-	action_state = random.randint(0, 300)
+def train_buffer(data):
+	d = data["data"]
 
-	controller_output = [random.random() for _ in range(CONFIG["controller_output_size"])]
+	if len(d["buffer_pred"]) == 0:
+		return
 
-	return frame, action_state, controller_output
+	preds = torch.stack(d["buffer_pred"])
+	targets = torch.stack(d["buffer_y"])
 
-def train():
-		# 	seq_inputs = []
-		# 	seq_targets = []
+	loss = d["loss_fn"](preds, targets)
 
-		# 	last_frames = []
-		# 	last_inputs = []
+	d["optimizer"].zero_grad()
+	loss.backward()
+	d["optimizer"].step()
 
-		# 	for t in range(CONFIG["sequence_length"]):
-		# 		frame, action_state, controller = getFrameAndActionState()
+	print("Training step loss:", loss.item())
 
-		# 		inp, target = process_frame(
-		# 			last_frames,
-		# 			last_inputs,
-		# 			frame,
-		# 			action_state,
-		# 			action_embedder
-		# 		)
+	d["losses"].append(loss.item())
+	d["buffer_x"].clear()
+	d["buffer_pred"].clear()
+	d["buffer_y"].clear()
 
-		# 		seq_inputs.append(inp)
-		# 		seq_targets.append(torch.tensor(controller, device=device))
+	for dpfh in range(len(d["prev"]["frame_history"])):
+		d["prev"]["frame_history"][dpfh] = d["prev"]["frame_history"][dpfh].detach()
 
-		# 		last_frames.append(frame)
-		# 		last_inputs.append(controller)
-
-		# 		total_frames_trained += 1
-
-		# 	seq_inputs = torch.stack(seq_inputs).unsqueeze(0)
-		# 	seq_targets = torch.stack(seq_targets).unsqueeze(0)
-
-		# 	pred, _ = model(seq_inputs)
-
-		# 	loss = loss_fn(pred, seq_targets)
-
-		# 	optimizer.zero_grad()
-		# 	loss.backward()
-		# 	optimizer.step()
-
-		# print("Epoch:", epoch, "Loss:", loss.item())
-		# print("Frames trained on:", total_frames_trained)
+	for dpih in range(len(d["prev"]["input_history"])):
+		d["prev"]["input_history"][dpih] = d["prev"]["input_history"][dpih].detach()
 
 def saveNNData(file, data):
 	global pickles_dir
 
+	train_buffer(data)
+
 	print("DON'T QUIT Saving...")
 
-	# pickles_dir + file + ".pt"
+	path = pickles_dir + file + "_model.pt"
 
-	with open(pickles_dir + file + ".pkl", 'wb') as f:
+	torch.save({
+		"model": data["data"]["model"].state_dict(),
+		"lstm": data["data"]["lstm"].state_dict(),
+		"embed": data["data"]["embed"].state_dict(),
+		"optimizer": data["data"]["optimizer"].state_dict(),
+		"frames": data["data"]["frames"], 
+		"losses": data["data"]["losses"]
+	}, path)
+
+	with open(pickles_dir + file + ".pkl", "wb") as f:
 		pickle.dump(data["last_file"], f)
 
 	print("Saved!")
 
 def addNNData(data, gamestate, myPort, opPort):
-	pass
+	raw_frame, action_state, controller = processGamestate(
+		gamestate, myPort, opPort
+	)
+
+	d = data["data"]
+
+	if "frame_history" not in d["prev"]:
+		d["prev"]["frame_history"] = []
+		d["prev"]["input_history"] = []
+		d["prev"]["hidden"] = None
+
+	frame_hist = d["prev"]["frame_history"]
+	input_hist = d["prev"]["input_history"]
+	hidden = d["prev"]["hidden"]
+
+	frame_tensor = torch.tensor(raw_frame, dtype=torch.float32, device=device)
+	action_tensor = torch.tensor([action_state], dtype=torch.long, device=device)
+	action_embed = d["embed"](action_tensor).squeeze(0)
+	lstm_input = frame_tensor.unsqueeze(0).unsqueeze(0)
+	lstm_out, hidden = d["lstm"](lstm_input, hidden)
+	lstm_vec = lstm_out.squeeze().detach()
+
+	hidden = (hidden[0].detach(), hidden[1].detach())
+
+	full_state = torch.cat([
+		frame_tensor,
+		action_embed,
+		lstm_vec
+	])
+
+	frame_hist.append(full_state)
+
+	if len(frame_hist) > CONFIG["history_frames"] + 1:
+		frame_hist.pop(0)
+
+	if len(input_hist) > CONFIG["history_frames"]:
+		input_hist.pop(0)
+
+	full_state_size = (
+		CONFIG["frame_feature_size"]
+		+ CONFIG["action_embed_size"]
+		+ CONFIG["lstm_hidden"]
+	)
+
+	# build padded histories
+	padded_frames = [torch.zeros(full_state_size, device=device) for _ in range(CONFIG["history_frames"] + 1 - len(frame_hist))] + frame_hist
+	padded_frames = padded_frames[-(CONFIG["history_frames"] + 1):]
+
+	padded_inputs = [torch.zeros(CONFIG["controller_output_size"], device=device) for _ in range(CONFIG["history_frames"] - len(input_hist))] + input_hist
+	padded_inputs = padded_inputs[-CONFIG["history_frames"]:]
+
+	nn_input = torch.cat(padded_frames + padded_inputs)
+
+	controller_tensor = torch.tensor(
+		controller,
+		dtype=torch.float32,
+		device=device
+	)
+
+	input_hist.append(controller_tensor)
+	pred = d["model"](nn_input)
+
+	d["buffer_x"].append(nn_input)
+	d["buffer_pred"].append(pred)
+	d["buffer_y"].append(controller_tensor)
+
+	d["frames"] += 1
+	d["prev"]["hidden"] = hidden
+
+	if len(d["buffer_pred"]) >= CONFIG["sequence_length"]:   # 4 seconds of gameplay
+		train_buffer(data)
 
 def loadNNData(file):
 	global pickles_dir
 
 	print("Loading data...")
 
-	data = {"last_file": None}
-	
-	action_embedder = ActionEmbedding(CONFIG["num_action_states"], CONFIG["action_embed_size"]).to(device)
+	data = {"data": {}, "last_file": None}
 
-	input_size = CONFIG["frame_feature_size"] + CONFIG["action_embed_size"]
+	action_embedder = ActionEmbedding(
+		CONFIG["num_action_states"],
+		CONFIG["action_embed_size"]
+	).to(device)
 
-	lstm
+	lstm = MLP_LSTM_Model(
+		CONFIG["frame_feature_size"],
+		CONFIG["mlp_hidden"],
+		CONFIG["lstm_hidden"],
+		CONFIG["lstm_layers"],
+		CONFIG["lstm_hidden"]
+	).to(device)
 
-	print("Total parameters:", count_parameters(model))
+	full_state_size = (
+		CONFIG["frame_feature_size"]
+		+ CONFIG["action_embed_size"]
+		+ CONFIG["lstm_hidden"]
+	)
 
-	data["optimizer"] = optim.Adam(
-		list(model.parameters()) + list(action_embedder.parameters()),
+	ffn_input_size = (
+		(CONFIG["history_frames"] + 1) * full_state_size
+		+ CONFIG["history_frames"] * CONFIG["controller_output_size"]
+	)
+
+	model = FeedForwardNet(
+		ffn_input_size,
+		CONFIG["controller_output_size"]
+	).to(device)
+
+	optimizer = optim.Adam(
+		list(model.parameters())
+		+ list(lstm.parameters())
+		+ list(action_embedder.parameters()),
 		lr=CONFIG["lr"]
 	)
 
-	data["loss_fn"] = nn.MSELoss()
+	data["data"]["model"] = model
+	data["data"]["lstm"] = lstm
+	data["data"]["embed"] = action_embedder
+	data["data"]["optimizer"] = optimizer
+	data["data"]["loss_fn"] = nn.MSELoss()
+	data["data"]["frames"] = 0
+	data["data"]["losses"] = []
+	data["data"]["buffer_x"] = []
+	data["data"]["buffer_pred"] = []
+	data["data"]["buffer_y"] = []
+	data["data"]["prev"] = {}
 
-	data["model"] = FeedForwardNet(action_embedder, lstm)
+	path = pickles_dir + file + "_model.pt"
 
 	if os.path.exists(path):
-		model.load_state_dict(torch.load(path))
 
+		checkpoint = torch.load(path, map_location=device)
+
+		model.load_state_dict(checkpoint["model"])
+		lstm.load_state_dict(checkpoint["lstm"])
+		action_embedder.load_state_dict(checkpoint["embed"])
+		optimizer.load_state_dict(checkpoint["optimizer"])
+		data["data"]["frames"] = checkpoint["frames"]
+		data["data"]["losses"] = checkpoint["losses"]
+
+	last_file_path = pickles_dir + file + ".pkl"
+
+	if os.path.exists(last_file_path):
+		with open(last_file_path, "rb") as f:
+			data["last_file"] = pickle.load(f)
+
+	print("Total parameters:", count_parameters(model) + count_parameters(lstm) + count_parameters(action_embedder))
 
 	print("Data Loaded!")
+
 	return data
 
 
 if __name__ == "__main__":
-	loopThrough(addNNData, saveNNData, loadNNData, savefile="ice_god_falco")
+	loopThrough(addNNData, saveNNData, loadNNData, savefile="ice_god_samus")
