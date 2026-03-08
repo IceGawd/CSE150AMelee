@@ -40,7 +40,7 @@ else:
 
 console.stop()
 
-console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64_3.5.2.AppImage")
+console = melee.Console(path="/home/avighna/Downloads/Slippi_Online-x86_64.AppImage")
 
 myPort = 1
 opPort = 2

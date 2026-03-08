@@ -2,3 +2,4 @@
 *.pkl
 *.pt
 *.pyc
+Bayes/__pycache__/*

@@ -4,6 +4,7 @@ import torch.optim as optim
 import random
 import os
 import melee
+import datetime
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -15,25 +16,28 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 CONFIG = {
 	# data
-	"frame_feature_size": 57,     # processed frame features
+	"frame_feature_size": 35,     # processed frame features
 	"action_embed_size": 32,
 	"controller_output_size": 18,
 	"num_action_states": len(melee.enums.Action),  
 
 	# history
-	"history_frames": 10,
+	"history_frames": 4,
 
 	# mlp sizes
-	"mlp_hidden": 128,
+	"mlp_hidden": 32,
 
 	# lstm
-	"lstm_hidden": 128,
-	"lstm_layers": 2,
+	"lstm_hidden": 32,
+	"lstm_layers": 1,
 
 	# training
-	"lr": 1e-4,
-	"sequence_length": 1000
+	"lr": 1e-3, 
+	"sequence_length": 1000, 
+	"EPOCHS": 10
 }
+
+quitAfterThis = False
 
 class ActionEmbedding(nn.Module):
 	def __init__(self, num_actions, embed_dim):
@@ -55,9 +59,9 @@ class MLP_LSTM_Model(nn.Module):
 
 		self.mlp = nn.Sequential(
 			nn.Linear(input_size, mlp_hidden),
-			nn.ReLU(),
+			nn.LeakyReLU(0.01),
 			nn.Linear(mlp_hidden, mlp_hidden),
-			nn.ReLU()
+			nn.LeakyReLU(0.01)
 		)
 
 		self.lstm = nn.LSTM(
@@ -89,7 +93,7 @@ class FeedForwardNet(nn.Module):
 
 		layers.append(nn.Sequential(
 			nn.Linear(input_size, hidden_size),
-			nn.ReLU()
+			nn.LeakyReLU(0.01)
 		))
 
 		current = hidden_size
@@ -98,7 +102,7 @@ class FeedForwardNet(nn.Module):
 
 			layers.append(nn.Sequential(
 				nn.Linear(current, next_size),
-				nn.ReLU()
+				nn.LeakyReLU(0.01)
 			))
 
 			current = next_size
@@ -108,7 +112,6 @@ class FeedForwardNet(nn.Module):
 		self.layers = nn.ModuleList(layers)
 
 	def forward(self, x):
-
 		out = x
 
 		for layer in self.layers:
@@ -132,19 +135,19 @@ def processGamestate(gamestate, myPort, opPort):
 	for port in [myPort, opPort]:
 		playerstate = gamestate.players[port]
 		raw_frame.append(float(playerstate.action_frame))
-		raw_frame.extend(playerstate.ecb_bottom)
-		raw_frame.extend(playerstate.ecb_left)
-		raw_frame.extend(playerstate.ecb_right)
-		raw_frame.extend(playerstate.ecb_top)
+		# raw_frame.extend(playerstate.ecb_bottom)
+		# raw_frame.extend(playerstate.ecb_left)
+		# raw_frame.extend(playerstate.ecb_right)
+		# raw_frame.extend(playerstate.ecb_top)
 		raw_frame.append(float(playerstate.facing))
 		raw_frame.append(float(playerstate.hitlag_left))
 		raw_frame.append(float(playerstate.hitstun_frames_left))
 		raw_frame.append(float(playerstate.invulnerability_left))
 		raw_frame.append(float(playerstate.invulnerable))
 		raw_frame.append(float(playerstate.jumps_left))
-		raw_frame.append(float(playerstate.moonwalkwarning))
-		raw_frame.append(float(playerstate.off_stage))
-		raw_frame.append(float(playerstate.on_ground))
+		# raw_frame.append(float(playerstate.moonwalkwarning))
+		# raw_frame.append(float(playerstate.off_stage))
+		# raw_frame.append(float(playerstate.on_ground))
 		raw_frame.append(float(playerstate.percent))
 		raw_frame.append(float(playerstate.position.x))
 		raw_frame.append(float(playerstate.position.y))
@@ -159,37 +162,46 @@ def processGamestate(gamestate, myPort, opPort):
 
 	action_state = gamestate.players[myPort].action.value
 
-	controller = PickleableControllerState(gamestate.players[myPort].controller_state).to_numpy()
+	pcs = PickleableControllerState(gamestate.players[myPort].controller_state)
+	controller = pcs.to_numpy()
+	# print(pcs.main_stick)
 
 	return raw_frame, action_state, controller
 
 def train_buffer(data):
 	d = data["data"]
 
-	if len(d["buffer_pred"]) == 0:
-		return
+	for i in range(1):
+		for (raw_frame, action_state, controller) in d["raw_data"]:
+			predictFromGamestate(data, raw_frame, action_state, controller)
 
-	preds = torch.stack(d["buffer_pred"])
-	targets = torch.stack(d["buffer_y"])
+		if len(d["buffer_pred"]) == 0:
+			return
 
-	loss = d["loss_fn"](preds, targets)
+		preds = torch.stack(d["buffer_pred"])
+		targets = torch.stack(d["buffer_y"])
 
-	d["optimizer"].zero_grad()
-	loss.backward()
-	d["optimizer"].step()
+		loss = d["loss_fn"](preds, targets)
 
-	print("Training step loss:", loss.item())
+		d["optimizer"].zero_grad()
+		loss.backward()
+		d["optimizer"].step()
 
-	d["losses"].append(loss.item())
-	d["buffer_x"].clear()
-	d["buffer_pred"].clear()
-	d["buffer_y"].clear()
+		print("Training step loss:", loss.item())
 
-	for dpfh in range(len(d["prev"]["frame_history"])):
-		d["prev"]["frame_history"][dpfh] = d["prev"]["frame_history"][dpfh].detach()
+		for dpfh in range(len(d["prev"]["frame_history"])):
+			d["prev"]["frame_history"][dpfh] = d["prev"]["frame_history"][dpfh].detach()
 
-	for dpih in range(len(d["prev"]["input_history"])):
-		d["prev"]["input_history"][dpih] = d["prev"]["input_history"][dpih].detach()
+		for dpih in range(len(d["prev"]["input_history"])):
+			d["prev"]["input_history"][dpih] = d["prev"]["input_history"][dpih].detach()
+
+		d["losses"].append(loss.item())
+		d["buffer_x"].clear()
+		d["buffer_pred"].clear()
+		d["buffer_y"].clear()
+
+	d["raw_data"].clear()
+
 
 def saveNNData(file, data):
 	global pickles_dir
@@ -206,7 +218,8 @@ def saveNNData(file, data):
 		"embed": data["data"]["embed"].state_dict(),
 		"optimizer": data["data"]["optimizer"].state_dict(),
 		"frames": data["data"]["frames"], 
-		"losses": data["data"]["losses"]
+		"losses": data["data"]["losses"], 
+		"epochs": data["data"]["epochs"]
 	}, path)
 
 	with open(pickles_dir + file + ".pkl", "wb") as f:
@@ -219,6 +232,14 @@ def addNNData(data, gamestate, myPort, opPort):
 		gamestate, myPort, opPort
 	)
 
+	# predictFromGamestate(data, raw_frame, action_state, controller)
+
+	data["data"]["raw_data"].append((raw_frame, action_state, controller))
+
+	if len(data["data"]["raw_data"]) >= CONFIG["sequence_length"]:
+		train_buffer(data)
+
+def predictFromGamestate(data, raw_frame, action_state, controller):
 	d = data["data"]
 
 	if "frame_history" not in d["prev"]:
@@ -274,8 +295,8 @@ def addNNData(data, gamestate, myPort, opPort):
 		device=device
 	)
 
-	input_hist.append(controller_tensor)
 	pred = d["model"](nn_input)
+	input_hist.append(controller_tensor)
 
 	d["buffer_x"].append(nn_input)
 	d["buffer_pred"].append(pred)
@@ -284,11 +305,9 @@ def addNNData(data, gamestate, myPort, opPort):
 	d["frames"] += 1
 	d["prev"]["hidden"] = hidden
 
-	if len(d["buffer_pred"]) >= CONFIG["sequence_length"]:   # 4 seconds of gameplay
-		train_buffer(data)
-
 def loadNNData(file):
 	global pickles_dir
+	global quitAfterThis
 
 	print("Loading data...")
 
@@ -337,15 +356,16 @@ def loadNNData(file):
 	data["data"]["loss_fn"] = nn.MSELoss()
 	data["data"]["frames"] = 0
 	data["data"]["losses"] = []
+	data["data"]["epochs"] = -1
 	data["data"]["buffer_x"] = []
 	data["data"]["buffer_pred"] = []
 	data["data"]["buffer_y"] = []
+	data["data"]["raw_data"] = []
 	data["data"]["prev"] = {}
 
 	path = pickles_dir + file + "_model.pt"
 
 	if os.path.exists(path):
-
 		checkpoint = torch.load(path, map_location=device)
 
 		model.load_state_dict(checkpoint["model"])
@@ -355,11 +375,23 @@ def loadNNData(file):
 		data["data"]["frames"] = checkpoint["frames"]
 		data["data"]["losses"] = checkpoint["losses"]
 
+		if "epochs" in checkpoint:
+			data["data"]["epochs"] = checkpoint["epochs"]
+		else:
+			data["data"]["epochs"] = 0
+
 	last_file_path = pickles_dir + file + ".pkl"
 
 	if os.path.exists(last_file_path):
 		with open(last_file_path, "rb") as f:
 			data["last_file"] = pickle.load(f)
+	else:
+		data["data"]["epochs"] += 1
+
+	if data["data"]["epochs"] >= CONFIG["EPOCHS"] - 1:
+		quitAfterThis = True
+
+	print("EPOCHS:", data["data"]["epochs"])
 
 	print("Total parameters:", count_parameters(model) + count_parameters(lstm) + count_parameters(action_embedder))
 
@@ -369,4 +401,14 @@ def loadNNData(file):
 
 
 if __name__ == "__main__":
-	loopThrough(addNNData, saveNNData, loadNNData, savefile="ice_god_samus")
+	savefile = "ice_god_samus"
+
+	while not quitAfterThis:
+		loopThrough(addNNData, saveNNData, loadNNData, savefile=savefile)
+
+		# reset dataset progress for next epoch
+		last_file_path = pickles_dir + savefile + ".pkl"
+		if os.path.exists(last_file_path):
+			os.remove(last_file_path)
+
+		print(datetime.datetime.now())

@@ -5,15 +5,15 @@ import math
 import random
 
 # ---- Hyperparameters ----
-BATCH_SIZE = 512
-EPOCHS = 2000
-LR = 0.01
+BATCH_SIZE = 100
+EPOCHS = 1000
+LR = 1e-3
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ---- Generate training data ----
-def generate_batch(batch_size):
+def generate_batch(batch_size, theta_min=0, theta_max=2*math.pi):
     r = torch.rand(batch_size, 1)  # radius in [0,1]
-    theta = torch.rand(batch_size, 1) * 2 * math.pi  # angle in [0, 2pi]
+    theta = torch.rand(batch_size, 1) * (theta_max - theta_min) + theta_min  # angle in [0, 2pi]
 
     x = r * torch.cos(theta)
     y = r * torch.sin(theta)
@@ -27,19 +27,11 @@ class PolarToCartesian(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 128),
+            nn.Linear(2, 64),
             nn.ReLU(),
-            nn.Linear(128, 64),
+            nn.Linear(64, 64),
             nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 8),
-            nn.ReLU(),
-            nn.Linear(8, 4),
-            nn.ReLU(),
-            nn.Linear(4, 2)
+            nn.Linear(64, 2)
         )
 
     def forward(self, x):
@@ -49,18 +41,23 @@ model = PolarToCartesian().to(DEVICE)
 optimizer = optim.Adam(model.parameters(), lr=LR)
 loss_fn = nn.MSELoss()
 
+print(sum(p.numel() for p in model.parameters() if p.requires_grad))
+
 # ---- Training loop ----
 for epoch in range(EPOCHS):
-    inputs, targets = generate_batch(BATCH_SIZE)
+    piece = int(random.random() * EPOCHS)
+    # inputs, targets = generate_batch(BATCH_SIZE)
+    inputs, targets = generate_batch(BATCH_SIZE, theta_min=2*math.pi*piece/EPOCHS, theta_max=2*math.pi*(piece + 1)/EPOCHS)
 
     preds = model(inputs)
+
     loss = loss_fn(preds, targets)
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-    if epoch % 200 == 0:
+    if epoch % (EPOCHS // 10) == 0:
         print(f"Epoch {epoch}, Loss: {loss.item():.6f}")
 
 # ---- Test edge case near discontinuity ----

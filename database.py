@@ -2,6 +2,7 @@ import melee
 import numpy as np
 import os
 import time
+import random
 
 def getArray(point):
 	return np.concatenate([point["value"].flatten(), point["input"].to_numpy().flatten()])
@@ -31,7 +32,7 @@ class PickleableControllerState(melee.controller.ControllerState):
 			self.l_shoulder = controller_state.l_shoulder  # float
 			self.main_stick = controller_state.main_stick  # (x, y)
 			self.r_shoulder = controller_state.r_shoulder  # float
-			
+
 			# print(self.l_shoulder)
 			# print(self.r_shoulder)
 		else:
@@ -74,7 +75,7 @@ class PickleableControllerState(melee.controller.ControllerState):
 		# print([np_array[i] for i, button in enumerate(csButtonKeys)])
 
 		button_size = len(csButtonKeys)
-		self.button = {button: bool(np_array[i] > 5e-9) for i, button in enumerate(csButtonKeys)}
+		self.button = {button: bool(np_array[i] > random.random()) for i, button in enumerate(csButtonKeys)}
 		self.c_stick = tuple(np_array[button_size:button_size + 2])
 		self.l_shoulder = float(np_array[button_size + 2])
 		self.main_stick = tuple(np_array[button_size + 3:button_size + 5])
@@ -103,6 +104,24 @@ def colorCharacter(gamestate, character, color):
 					return port
 
 	return -1
+
+def set_controller_state(controller, cs):
+	controller.tilt_analog(melee.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
+	controller.tilt_analog(melee.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
+	for b in cs.button:
+#		if (b not in [melee.Button.BUTTON_START, melee.Button.BUTTON_L, melee.Button.BUTTON_R]):
+		if (b not in [melee.Button.BUTTON_START]):
+			if cs.button[b]:
+				controller.press_button(b)
+			else:
+				controller.release_button(b)
+
+	print(cs.main_stick)
+	print(cs.c_stick)
+	# controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
+	# controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
+
+	controller.flush()
 
 def me_you(gamestate, me, you):
 	if len(gamestate.players.keys()) != 2:
@@ -167,7 +186,6 @@ def fox_fox_FD(gamestate):
 			return -1
 
 	return port
-
 
 filefunctions = {
 	"ice_god_samus": [ice_god_samus, False], 
@@ -298,7 +316,11 @@ def loopThrough(addData, saveData, loadData, filesFrom=["2025"], savefile="ice_g
 						if filefunctions[savefile][1]:
 							addData(data, gamestate, port2, port)
 
-						gamestate = console.step()
+						try:
+							gamestate = console.step()
+						except:
+							print(slp_file + " (Weird halfway through???)")
+							break
 				else:
 					print(slp_file + " (Invalid)")
 
@@ -392,26 +414,6 @@ def fast_compression(data):
 		data["data"][key] = newPoints
 
 	return data
-
-def set_controller_state(controller, cs):
-	# controller.release_all()
-
-	"""
-	controller.tilt_analog(melee.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
-	controller.tilt_analog(melee.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
-	for b in cs.button:
-		if (b != melee.Button.BUTTON_START):
-			if cs.button[b]:
-				controller.press_button(b)
-			else:
-				controller.release_button(b)
-	"""
-
-	controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
-	controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
-
-	controller.flush()
-
 
 character_stage = {
 	"ice_god_samus": [melee.Character.SAMUS, melee.Stage.RANDOM_STAGE], 

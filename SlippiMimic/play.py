@@ -4,6 +4,7 @@ import numpy as np
 import signal
 import sys
 import os
+import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from database import *
@@ -18,7 +19,7 @@ from train import (
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-savefile = "ice_god_falco"
+savefile = "ice_god_samus"
 
 character, stage = character_stage[savefile]
 costume = 1
@@ -98,10 +99,11 @@ signal.signal(signal.SIGINT, signal_handler)
 # ----------------------------
 
 while True:
+	start = time.time()
 
 	gamestate = console.step()
 
-	# print(gamestate)
+	consoleStep = time.time()
 
 	if gamestate is None:
 		continue
@@ -123,6 +125,8 @@ while True:
 
 		with torch.no_grad():
 			lstm_out, hidden = lstm(lstm_input, hidden)
+
+		actionAndLSTM = time.time()
 
 		lstm_vec = lstm_out.squeeze()
 
@@ -160,11 +164,18 @@ while True:
 
 		nn_input = torch.cat(padded_frames + padded_inputs)
 
+		preModel = time.time()
+
 		with torch.no_grad():
 			pred = model(nn_input)
 
+		postModel = time.time()
+
 		controller_np = pred.detach().cpu().numpy()
 		pcs = PickleableControllerState(np_array=controller_np)
+
+		# print(controller_np[csButtonKeys.index(melee.enums.Button.BUTTON_L)])
+		# print(controller_np[csButtonKeys.index(melee.enums.Button.BUTTON_R)])
 
 		set_controller_state(
 			controller,
@@ -172,8 +183,16 @@ while True:
 		)
 
 		input_tensor = torch.tensor(controller_np, dtype=torch.float32, device=device)
+
 		input_history.append(input_tensor)
 
+		end = time.time()
+
+		print("consoleStep: " + str(int(1000 * (consoleStep - start))))
+		print("actionAndLSTM: " + str(int(1000 * (actionAndLSTM - consoleStep))))
+		print("preModel: " + str(int(1000 * (preModel - actionAndLSTM))))
+		print("postModel: " + str(int(1000 * (postModel - preModel))))
+		print("end: " + str(int(1000 * (end - postModel))))
 	else:
 
 		melee.MenuHelper.menu_helper_simple(
