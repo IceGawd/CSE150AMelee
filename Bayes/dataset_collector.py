@@ -13,7 +13,6 @@ from sklearn.cluster import MiniBatchKMeans
 
 saveKeys = []
 
-csButtonKeys = None
 pickles_dir = "./pickles/"
 
 def pointAverager(points):
