@@ -130,6 +130,9 @@ class MixedControllerLoss(nn.Module):
 		loss_buttons = self.bce(button_pred, button_target)
 		loss_analog = self.mse(analog_pred, analog_target)
 
+		# print("Loss Buttons: " + str(loss_buttons.item()))
+		# print("Loss Analog: " + str(loss_analog.item()))
+
 		return loss_buttons + loss_analog
 
 def count_parameters(model):
@@ -213,7 +216,6 @@ def train_buffer(data):
 			d["prev"]["input_history"][dpih] = d["prev"]["input_history"][dpih].detach()
 
 		d["losses"].append(loss.item())
-		d["buffer_x"].clear()
 		d["buffer_pred"].clear()
 		d["buffer_y"].clear()
 
@@ -259,7 +261,7 @@ def addNNData(data, gamestate, myPort, opPort):
 	if len(data["data"]["raw_data"]) >= CONFIG["sequence_length"]:
 		train_buffer(data)
 
-def predictFromGamestate(data, raw_frame, action_state, stage_state, opponent_state, controller):
+def predict_controller(data, raw_frame, action_state, stage_state, opponent_state, training=False):
 	d = data["data"]
 
 	if "frame_history" not in d["prev"]:
@@ -277,14 +279,25 @@ def predictFromGamestate(data, raw_frame, action_state, stage_state, opponent_st
 	stage_tensor = torch.tensor([stage_state], dtype=torch.long, device=device)
 	opponent_tensor = torch.tensor([opponent_state], dtype=torch.long, device=device)
 
-	action_embed = d["action"](action_tensor).squeeze(0)
-	stage_embed = d["stage"](stage_tensor).squeeze(0)
-	opponent_embed = d["opponent"](opponent_tensor).squeeze(0)
+	if training:
+		action_embed = d["action"](action_tensor).squeeze(0)
+		stage_embed = d["stage"](stage_tensor).squeeze(0)
+		opponent_embed = d["opponent"](opponent_tensor).squeeze(0)
 
-	lstm_input = frame_tensor.unsqueeze(0).unsqueeze(0)
-	lstm_out, hidden = d["lstm"](lstm_input, hidden)
-	lstm_vec = lstm_out.squeeze().detach()
+		lstm_input = frame_tensor.unsqueeze(0).unsqueeze(0)
+		lstm_out, hidden = d["lstm"](lstm_input, hidden)
+	else:
+		with torch.no_grad():
+			action_embed = d["action"](action_tensor).squeeze(0)
+			stage_embed = d["stage"](stage_tensor).squeeze(0)
+			opponent_embed = d["opponent"](opponent_tensor).squeeze(0)
 
+			lstm_input = frame_tensor.unsqueeze(0).unsqueeze(0)
+			lstm_out, hidden = d["lstm"](lstm_input, hidden)
+
+	lstm_vec = lstm_out.squeeze()
+
+	# detach hidden state so BPTT doesn't explode
 	hidden = (hidden[0].detach(), hidden[1].detach())
 
 	full_state = torch.cat([
@@ -311,30 +324,55 @@ def predictFromGamestate(data, raw_frame, action_state, stage_state, opponent_st
 		+ CONFIG["lstm_hidden"]
 	)
 
-	# build padded histories
-	padded_frames = [torch.zeros(full_state_size, device=device) for _ in range(CONFIG["history_frames"] + 1 - len(frame_hist))] + frame_hist
+	padded_frames = [torch.zeros(full_state_size, device=device)
+		for _ in range(CONFIG["history_frames"] + 1 - len(frame_hist))] + frame_hist
 	padded_frames = padded_frames[-(CONFIG["history_frames"] + 1):]
 
-	padded_inputs = [torch.zeros(CONFIG["controller_output_size"], device=device) for _ in range(CONFIG["history_frames"] - len(input_hist))] + input_hist
+	padded_inputs = [torch.zeros(CONFIG["controller_output_size"], device=device)
+		for _ in range(CONFIG["history_frames"] - len(input_hist))] + input_hist
 	padded_inputs = padded_inputs[-CONFIG["history_frames"]:]
 
 	nn_input = torch.cat(padded_frames + padded_inputs)
 
-	controller_tensor = torch.tensor(
-		controller,
-		dtype=torch.float32,
-		device=device
+	if training:
+		pred = d["model"](nn_input)
+	else:
+		with torch.no_grad():
+			pred = d["model"](nn_input)
+
+	d["prev"]["hidden"] = hidden
+
+	if training:
+		return pred          # keep gradients
+	else:
+		pred_np = pred.detach().cpu().numpy()
+
+		pcs = PickleableControllerState(np_array=pred_np)
+
+		input_hist.append(torch.tensor(pcs.to_numpy(), dtype=torch.float32, device=device)) # do PickleableController sampling change in future
+		return pcs
+
+def predictFromGamestate(data, raw_frame, action_state, stage_state, opponent_state, controller):
+	d = data["data"]
+
+	pred = predict_controller(
+		data,
+		raw_frame,
+		action_state,
+		stage_state,
+		opponent_state,
+		training=True
 	)
 
-	pred = d["model"](nn_input)
-	input_hist.append(controller_tensor)
+	controller_tensor = torch.tensor(controller, dtype=torch.float32, device=device)
 
-	d["buffer_x"].append(nn_input)
+	# teacher forcing: real controller goes into history
+	d["prev"]["input_history"].append(controller_tensor)
+
 	d["buffer_pred"].append(pred)
 	d["buffer_y"].append(controller_tensor)
 
 	d["frames"] += 1
-	d["prev"]["hidden"] = hidden
 
 def loadNNData(file):
 	global pickles_dir
@@ -415,7 +453,6 @@ def loadNNData(file):
 	data["data"]["frames"] = 0
 	data["data"]["losses"] = []
 	data["data"]["epochs"] = -1
-	data["data"]["buffer_x"] = []
 	data["data"]["buffer_pred"] = []
 	data["data"]["buffer_y"] = []
 	data["data"]["raw_data"] = []

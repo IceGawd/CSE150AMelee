@@ -72,10 +72,10 @@ class PickleableControllerState(melee.controller.ControllerState):
 	def from_numpy(self, np_array):
 		global csButtonKeys
 
-		# print([np_array[i] for i, button in enumerate(csButtonKeys)])
+		print([1 / (1 + np.exp(-np_array[i])) for i, button in enumerate(csButtonKeys)])
 
 		button_size = len(csButtonKeys)
-		self.button = {button: bool(np_array[i] > random.random()) for i, button in enumerate(csButtonKeys)}
+		self.button = {button: bool(1 / (1 + np.exp(-np_array[i])) > random.random()) for i, button in enumerate(csButtonKeys)}
 		self.c_stick = tuple(np_array[button_size:button_size + 2])
 		self.l_shoulder = float(np_array[button_size + 2])
 		self.main_stick = tuple(np_array[button_size + 3:button_size + 5])

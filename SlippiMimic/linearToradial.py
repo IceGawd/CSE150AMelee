@@ -45,9 +45,9 @@ print(sum(p.numel() for p in model.parameters() if p.requires_grad))
 
 # ---- Training loop ----
 for epoch in range(EPOCHS):
-    piece = int(random.random() * EPOCHS)
-    # inputs, targets = generate_batch(BATCH_SIZE)
-    inputs, targets = generate_batch(BATCH_SIZE, theta_min=2*math.pi*piece/EPOCHS, theta_max=2*math.pi*(piece + 1)/EPOCHS)
+    # piece = int(random.random() * EPOCHS)
+    inputs, targets = generate_batch(BATCH_SIZE)
+    # inputs, targets = generate_batch(BATCH_SIZE, theta_min=2*math.pi*piece/EPOCHS, theta_max=2*math.pi*(piece + 1)/EPOCHS)
 
     preds = model(inputs)
 
