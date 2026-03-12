@@ -40,15 +40,15 @@ CONFIG = {
 	"history_frames": 4,
 
 	# mlp sizes
-	"mlp_hidden": 16,
+	"mlp_hidden": 32,
 
 	# lstm
-	"lstm_hidden": 16,
-	"lstm_layers": 1,
+	"lstm_hidden": 32,
+	"lstm_layers": 2,
 
 	# training
 	"lr": 1e-3, 
-	"sequence_length": 1000, 
+	"sequence_length": 100, 
 	"EPOCHS": 10
 }
 
@@ -114,26 +114,122 @@ class FeedForwardNet(nn.Module):
 		return self.net(x)
 
 class MixedControllerLoss(nn.Module):
-	def __init__(self, button_count):
+	def __init__(self):
 		super().__init__()
-		self.button_count = button_count
-		self.bce = nn.BCEWithLogitsLoss()
+		self.button_count = len(csButtonKeys)
+		self.bcell = nn.BCEWithLogitsLoss()
+		self.bce = nn.BCELoss()
 		self.mse = nn.MSELoss()
+		self.sigmoid = nn.Sigmoid()
+
+	def magnitude(self, stick):
+		return (torch.pow(2 * stick[:, 0] - 1, 2) + torch.pow(2 * stick[:, 1] - 1, 2)).unsqueeze(1)
+
+	def angle(self, stick):
+		return torch.atan2(stick[:, 1] - 0.5, stick[:, 0] - 0.5).unsqueeze(1)
+
+	def angleDiff(self, stick_pred, stick_target):
+		angle_pred = self.angle(stick_pred)
+		angle_target = self.angle(stick_target)
+
+		diff = angle_pred - angle_target
+
+		# wrap to [-pi, pi]
+		diff = torch.atan2(torch.sin(diff), torch.cos(diff))
+
+		# normalize to [0,1]
+		return torch.abs(diff) / math.pi
 
 	def forward(self, pred, target):
-		button_pred = pred[:, :self.button_count]
-		button_target = target[:, :self.button_count]
+		# Layout assumption
+		# [buttons][c_x][c_y][l][main_x][main_y][r]
 
-		analog_pred = pred[:, self.button_count:]
-		analog_target = target[:, self.button_count:]
+		buttons_pred = pred[:, :self.button_count]
+		buttons_target = target[:, :self.button_count]
 
-		loss_buttons = self.bce(button_pred, button_target)
+		idx = self.button_count
+
+		c_stick_pred = pred[:, idx:idx+2]
+		c_stick_target = target[:, idx:idx+2]
+		idx += 2
+
+		l_shoulder_pred = pred[:, idx:idx+1]
+		l_shoulder_target = target[:, idx:idx+1]
+		idx += 1
+
+		main_stick_pred = pred[:, idx:idx+2]
+		main_stick_target = target[:, idx:idx+2]
+		idx += 2
+
+		r_shoulder_pred = pred[:, idx:idx+1]
+		r_shoulder_target = target[:, idx:idx+1]
+
+		# ---- BCE for everything except sticks ----
+		logits_pred = torch.cat([
+			buttons_pred,
+			l_shoulder_pred,
+			r_shoulder_pred
+		], dim=1)
+
+		logits_target = torch.cat([
+			buttons_target,
+			l_shoulder_target,
+			r_shoulder_target
+		], dim=1)
+
+		# print(logits_pred.shape)
+		# print(logits_target.shape)
+
+		# c_stick_pred = self.sigmoid(c_stick_pred)
+		# main_stick_pred = self.sigmoid(main_stick_pred)
+
+		analog_pred = torch.cat([
+			self.magnitude(c_stick_pred),
+			self.angleDiff(c_stick_pred, c_stick_target), 
+			self.magnitude(main_stick_pred), 
+			self.angleDiff(main_stick_pred, main_stick_target)
+		], dim=1)
+
+		smcst = self.magnitude(c_stick_target)
+		smmst = self.magnitude(main_stick_target)
+
+		analog_target = torch.cat([
+			smcst,
+			torch.zeros_like(smcst), 
+			smmst,
+			torch.zeros_like(smmst)
+		], dim=1)
+
+		# analog_pred = torch.cat([
+		# 	c_stick_pred,
+		# 	main_stick_pred
+		# ], dim=1)
+
+		# analog_target = torch.cat([
+		# 	c_stick_target,
+		# 	main_stick_target
+		# ], dim=1)
+
+		# print(torch.min(analog_pred))
+		# print(torch.max(analog_pred))	
+		# print(torch.min(analog_target))
+		# print(torch.max(analog_target))
+
+		print(main_stick_pred[0, :])
+		print(main_stick_target[0, :])
+		# print(self.magnitude(main_stick_pred[0:1, :]))
+		# print(self.angle(main_stick_pred[0:1, :]))
+		# print(self.magnitude(main_stick_target[0:1, :]))
+		# print(self.angle(main_stick_target[0:1, :]))
+
+		loss_logits = self.bcell(logits_pred, logits_target)
 		loss_analog = self.mse(analog_pred, analog_target)
 
-		# print("Loss Buttons: " + str(loss_buttons.item()))
-		# print("Loss Analog: " + str(loss_analog.item()))
+		print(loss_logits)
 
-		return loss_buttons + loss_analog
+		return loss_logits
+
+		# return self.bcell(pred, target)
 
 def count_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -191,7 +287,7 @@ def processGamestate(gamestate, myPort, opPort):
 def train_buffer(data):
 	d = data["data"]
 
-	for i in range(1):
+	for i in range(100):
 		for (raw_frame, action_state, stage_state, opponent_state, controller) in d["raw_data"]:
 			predictFromGamestate(data, raw_frame, action_state, stage_state, opponent_state, controller)
 
@@ -207,6 +303,7 @@ def train_buffer(data):
 		loss.backward()
 		d["optimizer"].step()
 
+		print(i)
 		print("Training step loss:", loss.item())
 
 		for dpfh in range(len(d["prev"]["frame_history"])):
@@ -449,7 +546,7 @@ def loadNNData(file):
 	data["data"]["stage"] = stage_embedder
 	data["data"]["opponent"] = opponent_embedder
 	data["data"]["optimizer"] = optimizer
-	data["data"]["loss_fn"] = MixedControllerLoss(len(csButtonKeys))
+	data["data"]["loss_fn"] = MixedControllerLoss()
 	data["data"]["frames"] = 0
 	data["data"]["losses"] = []
 	data["data"]["epochs"] = -1

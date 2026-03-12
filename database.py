@@ -72,14 +72,18 @@ class PickleableControllerState(melee.controller.ControllerState):
 	def from_numpy(self, np_array):
 		global csButtonKeys
 
-		print([1 / (1 + np.exp(-np_array[i])) for i, button in enumerate(csButtonKeys)])
+		# print([1 / (1 + np.exp(-np_array[i])) for i in range(len(np_array))])
 
 		button_size = len(csButtonKeys)
 		self.button = {button: bool(1 / (1 + np.exp(-np_array[i])) > random.random()) for i, button in enumerate(csButtonKeys)}
 		self.c_stick = tuple(np_array[button_size:button_size + 2])
-		self.l_shoulder = float(np_array[button_size + 2])
+		self.l_shoulder = float(1 / (1 + np.exp(-np_array[button_size + 2])))
 		self.main_stick = tuple(np_array[button_size + 3:button_size + 5])
-		self.r_shoulder = float(np_array[button_size + 5])
+		self.r_shoulder = float(1 / (1 + np.exp(-np_array[button_size + 5])))
+
+		self.button[melee.Button.BUTTON_START] = False
+		self.l_shoulder = 0
+		self.r_shoulder = 0
 
 def playerCharacter(gamestate, character, player):
 	if len(gamestate.players.keys()) != 2:
@@ -109,17 +113,16 @@ def set_controller_state(controller, cs):
 	controller.tilt_analog(melee.Button.BUTTON_MAIN, cs.main_stick[0], cs.main_stick[1])
 	controller.tilt_analog(melee.Button.BUTTON_C, cs.c_stick[0], cs.c_stick[1])
 	for b in cs.button:
-#		if (b not in [melee.Button.BUTTON_START, melee.Button.BUTTON_L, melee.Button.BUTTON_R]):
-		if (b not in [melee.Button.BUTTON_START]):
-			if cs.button[b]:
-				controller.press_button(b)
-			else:
-				controller.release_button(b)
+		if cs.button[b]:
+			controller.press_button(b)
+		else:
+			controller.release_button(b)
 
 	print(cs.main_stick)
 	print(cs.c_stick)
-	# controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
-	# controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
+
+	controller.press_shoulder(melee.Button.BUTTON_L, cs.l_shoulder)
+	controller.press_shoulder(melee.Button.BUTTON_R, cs.r_shoulder)
 
 	controller.flush()
 

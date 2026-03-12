@@ -20,7 +20,7 @@ from train import (
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-savefile = "ice_god_fox"
+savefile = "ice_god_falco"
 
 character, stage = character_stage[savefile]
 costume = 2
